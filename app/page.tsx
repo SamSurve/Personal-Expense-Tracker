@@ -1,47 +1,31 @@
-export default function Page() {
+'use client'
+
+import { useMemo, useState } from "react"
+
+type Transaction = { time: string; type: "BUY" | "SELL" | "TRANSFER"; merchant: string; category: string; amount: number; balance: number }
+const transactions: Transaction[] = [
+  { time: "09:42:18", type: "BUY", merchant: "Whole Foods Market", category: "Groceries", amount: -86.42, balance: 18420.18 },
+  { time: "08:15:03", type: "TRANSFER", merchant: "Vanguard Brokerage", category: "Investments", amount: 2500, balance: 18506.60 },
+  { time: "YESTERDAY", type: "SELL", merchant: "Fidelity · VTI", category: "Investments", amount: 842.16, balance: 16006.60 },
+  { time: "SEP 10 · 16:24", type: "BUY", merchant: "Cedar & Pine", category: "Dining", amount: -64.80, balance: 15164.44 },
+  { time: "SEP 10 · 12:08", type: "BUY", merchant: "Metro Transit", category: "Transport", amount: -32.00, balance: 15229.24 },
+  { time: "SEP 09 · 09:00", type: "TRANSFER", merchant: "Acme Corp · Payroll", category: "Income", amount: 6240.00, balance: 15261.24 },
+  { time: "SEP 08 · 18:41", type: "BUY", merchant: "Northstar Utilities", category: "Utilities", amount: -118.37, balance: 9021.24 },
+  { time: "SEP 07 · 14:18", type: "BUY", merchant: "Arcade Coffee", category: "Dining", amount: -5.75, balance: 9139.61 },
+]
+const chartPoints = [8, 12, 10, 17, 15, 21, 19, 26, 24, 31, 28, 35, 32, 38, 36, 42, 39, 48, 45, 52, 49, 57, 54, 61]
+
+export default function Home() {
+  const [range, setRange] = useState("1M")
+  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null)
+  const visibleTransactions = useMemo(() => range === "1D" ? transactions.slice(0, 3) : transactions, [range])
   return (
-    <main
-      style={{
-        colorScheme: 'light dark',
-        position: 'relative',
-        display: 'flex',
-        minHeight: '100vh',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'light-dark(#fff, #000)',
-        color: 'light-dark(#000, #fff)',
-      }}
-    >
-      <svg
-        aria-hidden="true"
-        style={{ width: 80, height: 80 }}
-        width={80}
-        height={80}
-        fill="none"
-        viewBox="0 0 20 20"
-        xmlns="http://www.w3.org/2000/svg"
-        stroke="currentColor"
-        strokeWidth="0.5"
-      >
-        <path
-          d="M14.2 14.2H17V6.9375C17 4.76288 15.2371 3 13.0625 3H5.8V5.8M14.2 14.2V7.79063L7.79062 14.2H14.2ZM14.2 14.2V17H6.9375C4.76288 17 3 15.2371 3 13.0625V5.8H5.8M5.8 5.8V12.2313L12.2313 5.8H5.8Z"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <p
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: 'calc(50% + 56px)',
-          transform: 'translateX(-50%)',
-          whiteSpace: 'nowrap',
-          fontSize: '14px',
-          fontWeight: 500,
-          color: 'light-dark(#71717a, #a1a1aa)',
-        }}
-      >
-        Your v0 generation will show here.
-      </p>
+    <main className="terminal-shell">
+      <header className="topbar"><div className="brand-mark"><span className="brand-dot" /> LEDGER<span className="brand-muted">/PERSONAL</span></div><div className="market-status"><span className="status-pulse" /> MARKET OPEN <span className="divider" /> SEPTEMBER 12, 2026 <span className="divider" /> 09:44:22 EST</div><button className="avatar" aria-label="Open profile">JD</button></header>
+      <section className="hero-grid" aria-label="Portfolio overview"><div className="hero-copy"><div className="eyebrow">PERSONAL BALANCE SHEET <span className="live-tag">LIVE</span></div><h1>Good morning, Jordan.</h1><p>Your financial position is trending <strong>+4.82%</strong> this period.</p></div><div className="metric-card primary"><span className="metric-label">TOTAL LIQUIDITY</span><strong>$18,420.18</strong><span className="metric-change positive">▲ 2.41% <em>24H</em></span></div><div className="metric-card"><span className="metric-label">NET WORTH</span><strong>$84,291.60</strong><span className="metric-change positive">▲ 4.82% <em>24H</em></span></div><div className="metric-card"><span className="metric-label">MONTHLY BURN</span><strong>$3,842.09</strong><span className="metric-change negative">▼ 1.08% <em>24H</em></span></div></section>
+      <section className="panel chart-panel"><div className="panel-heading"><div><div className="eyebrow">ACCOUNT PERFORMANCE</div><h2>Balance timeline</h2></div><div className="range-tabs">{["1D", "1W", "1M", "1Y", "ALL"].map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}</div></div><div className="chart-meta"><span>AVAILABLE BALANCE</span><strong>$18,420.18</strong><span className="positive">+ $846.27 (4.82%)</span></div><div className="chart-wrap" role="img" aria-label="Balance performance chart"><div className="y-axis"><span>$20k</span><span>$15k</span><span>$10k</span><span>$5k</span><span>$0</span></div><div className="chart-area"><div className="grid-lines" /><svg viewBox="0 0 900 280" preserveAspectRatio="none" className="line-chart"><defs><linearGradient id="areaFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#39e58c" stopOpacity=".25" /><stop offset="100%" stopColor="#39e58c" stopOpacity="0" /></linearGradient></defs><path d={`M 0 260 ${chartPoints.map((p, i) => `L ${(i / (chartPoints.length - 1)) * 900} ${260 - p * 3.7}`).join(" ")} L 900 280 L 0 280 Z`} fill="url(#areaFill)" /><path d={`M 0 260 ${chartPoints.map((p, i) => `L ${(i / (chartPoints.length - 1)) * 900} ${260 - p * 3.7}`).join(" ")}`} fill="none" stroke="#39e58c" strokeWidth="2.5" />{chartPoints.map((p, i) => <circle key={i} cx={(i / (chartPoints.length - 1)) * 900} cy={260 - p * 3.7} r={hoveredPoint === i ? 5 : 2.5} fill="#0b1115" stroke="#39e58c" strokeWidth="2" onMouseEnter={() => setHoveredPoint(i)} onMouseLeave={() => setHoveredPoint(null)} />)}</svg>{hoveredPoint !== null && <div className="chart-tooltip" style={{ left: `${(hoveredPoint / (chartPoints.length - 1)) * 100}%`, top: `${Math.max(8, 100 - chartPoints[hoveredPoint] * 3.7 / 2.8)}%` }}><b>${(12000 + chartPoints[hoveredPoint] * 105).toLocaleString()}</b><span>SEP {12 - Math.floor(hoveredPoint / 3)}</span></div>}<div className="x-axis"><span>SEP 01</span><span>SEP 04</span><span>SEP 07</span><span>SEP 10</span><span>TODAY</span></div></div></div></section>
+      <section className="panel ledger-panel"><div className="panel-heading ledger-heading"><div><div className="eyebrow">RECENT ACTIVITY</div><h2>Transaction ledger</h2></div><button className="export-btn">EXPORT CSV <span>↗</span></button></div><div className="ledger-scroll"><table><thead><tr><th>TIMESTAMP</th><th>TYPE</th><th>COUNTERPARTY / MERCHANT</th><th>CATEGORY</th><th className="align-right">AMOUNT</th><th className="align-right">RUNNING BALANCE</th></tr></thead><tbody>{visibleTransactions.map((tx) => <tr key={`${tx.time}-${tx.merchant}`}><td className="muted mono">{tx.time}</td><td><span className={`type-pill ${tx.type.toLowerCase()}`}>{tx.type}</span></td><td className="merchant">{tx.merchant}</td><td className="muted">{tx.category}</td><td className={`amount align-right mono ${tx.amount > 0 ? "positive" : "negative"}`}>{tx.amount > 0 ? "+" : "−"}${Math.abs(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td><td className="align-right mono">${tx.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>)}</tbody></table></div><div className="ledger-footer"><span>SHOWING {visibleTransactions.length} OF 128 TRANSACTIONS</span><button>VIEW FULL LEDGER <span>→</span></button></div></section>
+      <footer><span>LEDGER TERMINAL v2.4.1</span><span>DATA REFRESHED 12 SECONDS AGO</span><span className="footer-right">ENCRYPTED CONNECTION <span className="status-pulse" /></span></footer>
     </main>
   )
 }
