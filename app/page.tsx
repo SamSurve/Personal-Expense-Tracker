@@ -200,8 +200,8 @@ export default function Home() {
           >
             <span className="plus-symbol">+</span> RECORD TRANSACTION
           </button>
-          <button className="avatar" aria-label="Jordan Doe profile">
-            JD
+          <button className="avatar" aria-label="Yuvraj Singh profile">
+            YS
           </button>
         </div>
       </header>
@@ -212,7 +212,7 @@ export default function Home() {
           <div className="eyebrow">
             PERSONAL BALANCE SHEET <span className="live-tag">LIVE LEDGER</span>
           </div>
-          <h1>Good morning, Jordan.</h1>
+          <h1>Good morning, YUVRAJ SINGH.</h1>
           <p>
             Your financial position is trending <strong>+4.82%</strong> this period with active reconciliation.
           </p>
