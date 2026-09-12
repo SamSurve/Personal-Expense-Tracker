@@ -7,6 +7,7 @@ import { FilterToolbar } from '@/components/FilterToolbar'
 import { SpendAllocation } from '@/components/SpendAllocation'
 import { OrderTicketModal } from '@/components/OrderTicketModal'
 import { TransactionDrawer } from '@/components/TransactionDrawer'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 const MONTHLY_BUDGET = 5000.00
 const BASE_NET_WORTH = 84291.60
@@ -167,9 +168,42 @@ export default function Home() {
     document.body.removeChild(link)
   }
 
-  // Chart data points
-  const chartPoints = [8, 12, 10, 17, 15, 21, 19, 26, 24, 31, 28, 35, 32, 38, 36, 42, 39, 48, 45, 52, 49, 57, 54, 61]
-
+  // Chart data points & labels based on range
+  const { chartPoints, chartLabels, getTooltipText } = useMemo(() => {
+    switch (range) {
+      case '1D':
+        return {
+          chartPoints: [48, 46, 50, 49, 53, 51, 55, 54, 58, 56, 62, 61],
+          chartLabels: ['08:00', '11:00', '14:00', '17:00', 'TODAY'],
+          getTooltipText: () => 'TODAY · RECONCILED'
+        }
+      case '1W':
+        return {
+          chartPoints: [42, 40, 46, 44, 50, 48, 54, 52, 57, 55, 60, 61],
+          chartLabels: ['SEP 06', 'SEP 08', 'SEP 10', 'SEP 11', 'TODAY'],
+          getTooltipText: () => 'THIS WEEK · RECONCILED'
+        }
+      case '1Y':
+        return {
+          chartPoints: [10, 15, 12, 22, 18, 30, 25, 40, 35, 50, 45, 61],
+          chartLabels: ['OCT', 'JAN', 'APR', 'JUL', 'SEP'],
+          getTooltipText: () => 'THIS YEAR · RECONCILED'
+        }
+      case 'ALL':
+        return {
+          chartPoints: [5, 12, 8, 20, 15, 32, 25, 45, 38, 55, 48, 61],
+          chartLabels: ['2023', 'Q3', '2024', 'Q3', '2026'],
+          getTooltipText: () => 'HISTORICAL · RECONCILED'
+        }
+      case '1M':
+      default:
+        return {
+          chartPoints: [8, 12, 10, 17, 15, 21, 19, 26, 24, 31, 28, 35, 32, 38, 36, 42, 39, 48, 45, 52, 49, 57, 54, 61],
+          chartLabels: ['SEP 01', 'SEP 04', 'SEP 07', 'SEP 10', 'TODAY (SEP 12)'],
+          getTooltipText: (i: number) => `SEP ${Math.max(1, 12 - Math.floor((23 - i) / 2))} · RECONCILED`
+        }
+    }
+  }, [range])
   return (
     <main className="terminal-shell">
       {/* Top Bar with Live Indicator & Action Button */}
@@ -200,6 +234,7 @@ export default function Home() {
           >
             <span className="plus-symbol">+</span> RECORD TRANSACTION
           </button>
+          <ThemeToggle />
           <button className="avatar" aria-label="Yuvraj Singh profile">
             YS
           </button>
@@ -357,15 +392,13 @@ export default function Home() {
                   }}
                 >
                   <b>${(14000 + chartPoints[hoveredPoint] * 95).toLocaleString()}</b>
-                  <span>SEP {12 - Math.floor(hoveredPoint / 3)} · RECONCILED</span>
+                  <span>{getTooltipText(hoveredPoint)}</span>
                 </div>
               )}
               <div className="x-axis">
-                <span>SEP 01</span>
-                <span>SEP 04</span>
-                <span>SEP 07</span>
-                <span>SEP 10</span>
-                <span>TODAY (SEP 12)</span>
+                {chartLabels.map((label, idx) => (
+                  <span key={idx}>{label}</span>
+                ))}
               </div>
             </div>
           </div>

@@ -24,6 +24,28 @@
   --amber: #fbbf24;
 }
 
+[data-theme='light'] {
+  --bg: #f8fafc;
+  --panel: #ffffff;
+  --panel-elevated: #f1f5f9;
+  --border: #e2e8f0;
+  --border-light: #cbd5e1;
+  --border-focus: #16a34a;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --muted: #64748b;
+  --green: #16a34a;
+  --green-bg: #dcfce7;
+  --green-border: #86efac;
+  --red: #dc2626;
+  --red-bg: #fee2e2;
+  --red-border: #fca5a5;
+  --blue: #2563eb;
+  --blue-bg: #dbeafe;
+  --blue-border: #93c5fd;
+  --amber: #d97706;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -51,6 +73,10 @@ button, input, select {
   margin: auto;
   padding: 0 42px 36px;
   background: radial-gradient(ellipse at 65% -20%, #152d2b 0%, transparent 46%), var(--bg);
+}
+
+[data-theme='light'] .terminal-shell {
+  background: var(--bg);
 }
 
 /* Top Bar */
@@ -316,6 +342,11 @@ button, input, select {
   background: rgba(13, 21, 25, 0.78);
   border: 1px solid var(--border);
   backdrop-filter: blur(10px);
+}
+
+[data-theme='light'] .panel {
+  background: var(--panel);
+  backdrop-filter: none;
 }
 
 .chart-panel {
@@ -1013,6 +1044,11 @@ footer {
   padding: 20px;
 }
 
+[data-theme='light'] .modal-backdrop {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: none;
+}
+
 .order-ticket-modal {
   background: #0d161b;
   border: 1px solid #253d45;
@@ -1325,6 +1361,11 @@ footer {
   z-index: 120;
   display: flex;
   justify-content: flex-end;
+}
+
+[data-theme='light'] .drawer-overlay {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: none;
 }
 
 .transaction-drawer {
