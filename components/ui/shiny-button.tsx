@@ -29,7 +29,7 @@ export function ShinyButton({ children, onClick, className = "", themeColor = "b
 
         @property --gradient-percent {
           syntax: "<percentage>";
-          initial-value: 5%;
+          initial-value: 10%;
           inherits: false;
         }
 
@@ -43,8 +43,9 @@ export function ShinyButton({ children, onClick, className = "", themeColor = "b
           --shiny-cta-bg: #000000;
           --shiny-cta-bg-subtle: #1a1818;
           --shiny-cta-fg: #ffffff;
-          --shiny-cta-highlight: blue;
-          --shiny-cta-highlight-subtle: #8484ff;
+          --shiny-cta-highlight: var(--theme-color, blue);
+          --shiny-cta-highlight-subtle: var(--theme-color, #8484ff);
+          --gradient-shine: var(--theme-color, white);
           --animation: gradient-angle linear infinite;
           --duration: 3s;
           --shadow-size: 2px;
@@ -72,7 +73,9 @@ export function ShinyButton({ children, onClick, className = "", themeColor = "b
               var(--shiny-cta-highlight) calc(var(--gradient-percent) * 3),
               transparent calc(var(--gradient-percent) * 4)
             ) border-box;
-          box-shadow: inset 0 0 0 1px var(--shiny-cta-bg-subtle);
+          box-shadow: 
+            inset 0 0 0 1px var(--shiny-cta-bg-subtle),
+            0 0 20px -5px var(--shiny-cta-highlight);
           transition: var(--transition);
           transition-property: --gradient-angle-offset, --gradient-percent, --gradient-shine;
         }
@@ -198,8 +201,7 @@ export function ShinyButton({ children, onClick, className = "", themeColor = "b
         className={`shiny-cta ${className}`} 
         onClick={onClick}
         style={{
-          "--shiny-cta-highlight": themeColor,
-          "--shiny-cta-highlight-subtle": themeColor,
+          "--theme-color": themeColor,
         } as React.CSSProperties}
       >
         <span>{children}</span>
