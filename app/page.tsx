@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { TubesBackground } from '@/components/TubesBackground';
-import { Button } from '@/components/ui/button';
+import { ShinyButton } from '@/components/ui/shiny-button';
 import { MousePointer2 } from 'lucide-react';
 
 export default function LandingPage() {
@@ -25,13 +25,9 @@ export default function LandingPage() {
             </p>
             
             <Link href="/dashboard">
-              <Button 
-                variant="outline" 
-                size="lg"
-                className="rounded-full px-10 py-7 text-lg border-white/20 text-white hover:bg-white/10 hover:text-white transition-all duration-300 backdrop-blur-md bg-white/5"
-              >
+              <ShinyButton>
                 Enter Experience
-              </Button>
+              </ShinyButton>
             </Link>
           </div>
 
