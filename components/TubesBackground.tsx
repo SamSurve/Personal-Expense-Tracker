@@ -14,12 +14,14 @@ interface TubesBackgroundProps {
   children?: React.ReactNode;
   className?: string;
   enableClickInteraction?: boolean;
+  onColorChange?: (color: string) => void;
 }
 
 export function TubesBackground({ 
   children, 
   className,
-  enableClickInteraction = true 
+  enableClickInteraction = true,
+  onColorChange
 }: TubesBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -83,6 +85,10 @@ export function TubesBackground({
     
     tubesRef.current.tubes.setColors(colors);
     tubesRef.current.tubes.setLightsColors(lightsColors);
+    
+    if (onColorChange) {
+      onColorChange(colors[0]);
+    }
   };
 
   return (

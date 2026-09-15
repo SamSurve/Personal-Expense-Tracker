@@ -6,9 +6,10 @@ interface ShinyButtonProps {
   children: React.ReactNode
   onClick?: () => void
   className?: string
+  themeColor?: string
 }
 
-export function ShinyButton({ children, onClick, className = "" }: ShinyButtonProps) {
+export function ShinyButton({ children, onClick, className = "", themeColor = "blue" }: ShinyButtonProps) {
   return (
     <>
       <style jsx>{`
@@ -193,7 +194,14 @@ export function ShinyButton({ children, onClick, className = "" }: ShinyButtonPr
         }
       `}</style>
 
-      <button className={`shiny-cta ${className}`} onClick={onClick}>
+      <button 
+        className={`shiny-cta ${className}`} 
+        onClick={onClick}
+        style={{
+          "--shiny-cta-highlight": themeColor,
+          "--shiny-cta-highlight-subtle": themeColor,
+        } as React.CSSProperties}
+      >
         <span>{children}</span>
       </button>
     </>

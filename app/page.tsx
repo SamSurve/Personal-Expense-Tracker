@@ -1,13 +1,17 @@
-import React from 'react';
+'use client';
+
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { TubesBackground } from '@/components/TubesBackground';
 import { ShinyButton } from '@/components/ui/shiny-button';
 import { MousePointer2 } from 'lucide-react';
 
 export default function LandingPage() {
+  const [themeColor, setThemeColor] = useState("#f967fb"); // Default matches initial tube color
+
   return (
     <div className="w-full h-screen font-sans">
-      <TubesBackground>
+      <TubesBackground onColorChange={setThemeColor}>
         <div className="flex flex-col items-center justify-center w-full h-full gap-8 text-center px-4">
           
           <div className="space-y-4 pointer-events-auto cursor-default">
@@ -25,7 +29,7 @@ export default function LandingPage() {
             </p>
             
             <Link href="/dashboard">
-              <ShinyButton>
+              <ShinyButton themeColor={themeColor}>
                 Enter Experience
               </ShinyButton>
             </Link>
