@@ -1,354 +1,303 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Transaction, TransactionType } from '@/lib/types'
-import { KNOWN_ACCOUNTS, KNOWN_CATEGORIES } from '@/lib/mockData'
+import { Transaction } from '@/lib/types'
+import { X, Plus, Edit2, AlertCircle, RefreshCw } from 'lucide-react'
 
 interface OrderTicketModalProps {
   isOpen: boolean
   onClose: () => void
-  onSubmit: (transaction: Omit<Transaction, 'balance'>) => void
+  onSubmit: (transaction: Omit<Transaction, 'balance'>) => void | Promise<void>
   editingTransaction?: Transaction | null
-  currentLiquidity: number
+  currentLiquidity?: number
+  userCategories?: string[]
 }
 
-const QUICK_MERCHANTS: Record<TransactionType, string[]> = {
-  EXPENSE: ['Whole Foods Market', 'Starbucks', 'Uber / Lyft', 'Amazon', 'Avalon Rent', 'Trader Joe’s'],
-  INCOME: ['Acme Corp · Payroll', 'Consulting Client', 'Stripe Payout', 'Fidelity Dividend', 'Venmo Inflow'],
-  TRANSFER: ['Vanguard Brokerage', 'Coinbase Deposit', 'High-Yield Savings', 'Checking Transfer']
-}
+const DEFAULT_CATEGORIES = [
+  'Food & Dining',
+  'Travel & Transport',
+  'Groceries',
+  'Housing & Rent',
+  'Utilities & Bills',
+  'Subscriptions',
+  'Shopping & Retail',
+  'Healthcare & Wellness',
+  'General',
+]
 
 export function OrderTicketModal({
   isOpen,
   onClose,
   onSubmit,
   editingTransaction,
-  currentLiquidity
+  userCategories = [],
 }: OrderTicketModalProps) {
-  const [type, setType] = useState<TransactionType>('EXPENSE')
+  const [title, setTitle] = useState<string>('')
   const [amount, setAmount] = useState<string>('')
-  const [merchant, setMerchant] = useState<string>('')
   const [category, setCategory] = useState<string>('Groceries')
-  const [account, setAccount] = useState<string>(KNOWN_ACCOUNTS[0])
-  const [timestamp, setTimestamp] = useState<string>('')
+  const [date, setDate] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
-  const [status, setStatus] = useState<'SETTLED' | 'PENDING'>('SETTLED')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const amountInputRef = useRef<HTMLInputElement>(null)
+  const titleInputRef = useRef<HTMLInputElement>(null)
 
-  // Reset or populate fields when modal opens or editing changes
+  // Merge default categories with user's configured categories
+  const categories = Array.from(new Set([...userCategories, ...DEFAULT_CATEGORIES]))
+
+  // Helper for today's date YYYY-MM-DD
+  const getTodayDateStr = () => {
+    const today = new Date()
+    const yyyy = today.getFullYear()
+    const mm = String(today.getMonth() + 1).padStart(2, '0')
+    const dd = String(today.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  // Populate or reset form fields when modal opens or editingTransaction changes
   useEffect(() => {
     if (!isOpen) return
 
-    if (editingTransaction) {
-      setType(editingTransaction.type)
-      setAmount(Math.abs(editingTransaction.amount).toFixed(2))
-      setMerchant(editingTransaction.merchant)
-      setCategory(editingTransaction.category)
-      setAccount(editingTransaction.account)
-      setTimestamp(editingTransaction.timestamp)
-      setNotes(editingTransaction.notes || '')
-      setStatus(editingTransaction.status)
-    } else {
-      const now = new Date()
-      const pad = (n: number) => n.toString().padStart(2, '0')
-      const isoNow = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+    setError(null)
+    setSubmitting(false)
 
-      setType('EXPENSE')
+    if (editingTransaction) {
+      setTitle(editingTransaction.merchant || '')
+      setAmount(Math.abs(editingTransaction.amount).toString())
+      setCategory(editingTransaction.category || 'Groceries')
+      setDate(editingTransaction.timestamp ? editingTransaction.timestamp.slice(0, 10) : getTodayDateStr())
+      setNotes(editingTransaction.notes || '')
+    } else {
+      setTitle('')
       setAmount('')
-      setMerchant('')
-      setCategory('Groceries')
-      setAccount(KNOWN_ACCOUNTS[0])
-      setTimestamp(isoNow)
+      setCategory(categories[0] || 'Groceries')
+      setDate(getTodayDateStr())
       setNotes('')
-      setStatus('SETTLED')
     }
 
+    // Auto-focus title input
     setTimeout(() => {
-      amountInputRef.current?.focus()
+      titleInputRef.current?.focus()
     }, 50)
   }, [isOpen, editingTransaction])
 
-  // Adjust category default when switching type
-  const handleTypeChange = (newType: TransactionType) => {
-    setType(newType)
-    if (newType === 'INCOME') {
-      setCategory('Income')
-    } else if (newType === 'TRANSFER') {
-      setCategory('Investments')
-    } else {
-      if (category === 'Income' || category === 'Investments') {
-        setCategory('Groceries')
-      }
-    }
-  }
-
-  // Keyboard shortcut for ESC
+  // ESC Key listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !submitting) {
         onClose()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, submitting])
 
   if (!isOpen) return null
 
-  const numAmount = parseFloat(amount) || 0
-  const signedAmount = type === 'EXPENSE' ? -Math.abs(numAmount) : Math.abs(numAmount)
-  const projectedLiquidity = currentLiquidity + signedAmount
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!merchant.trim() || numAmount <= 0) return
+    setError(null)
 
-    const randomHash = editingTransaction?.refHash || `0x${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}`
-    const txId = editingTransaction?.id || `TX-${Math.floor(100000 + Math.random() * 900000)}`
+    const trimmedTitle = title.trim()
+    const numAmount = parseFloat(amount)
 
-    onSubmit({
-      id: txId,
-      timestamp: timestamp || new Date().toISOString().replace('T', ' ').substring(0, 19),
-      type,
-      merchant: merchant.trim(),
-      category,
-      amount: signedAmount,
-      account,
-      status,
-      notes: notes.trim(),
-      refHash: randomHash
-    })
+    if (!trimmedTitle) {
+      setError('Please enter a valid expense title.')
+      return
+    }
 
-    onClose()
+    if (isNaN(numAmount) || numAmount <= 0) {
+      setError('Please enter a valid amount greater than ₹0.')
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      const signedAmount = -Math.abs(numAmount)
+      const txId = editingTransaction?.id || `TX-${Math.floor(100000 + Math.random() * 900000)}`
+      const refHash = editingTransaction?.refHash || `0x${Math.random().toString(16).substring(2, 10)}`
+
+      await onSubmit({
+        id: txId,
+        timestamp: date || getTodayDateStr(),
+        type: 'EXPENSE',
+        merchant: trimmedTitle,
+        category,
+        amount: signedAmount,
+        account: 'Primary Account',
+        status: 'SETTLED',
+        notes: notes.trim(),
+        refHash,
+      })
+
+      onClose()
+    } catch (err: any) {
+      console.error('Error submitting expense modal:', err)
+      setError(err.message || 'Failed to record expense. Please check backend server.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={() => {
+        if (!submitting) onClose()
+      }}
+    >
       <div
-        className="order-ticket-modal"
+        className="bg-[var(--panel)] border border-[var(--border)] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-5 relative text-[var(--text)] transition-all max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-labelledby="order-ticket-title"
+        aria-labelledby="record-expense-title"
       >
-        {/* Ticket Header */}
-        <div className="ticket-header">
+        {/* Header */}
+        <div className="flex items-start justify-between border-b border-[var(--border)] pb-4">
           <div>
-            <div className="eyebrow">
-              {editingTransaction ? `MODIFY ORDER // #${editingTransaction.id}` : 'LIMIT / MARKET ORDER ENTRY'}
-            </div>
-            <h2 id="order-ticket-title" className="ticket-title">
-              {editingTransaction ? 'Edit Transaction Ticket' : 'Execute New Transaction'}
+            <h2 id="record-expense-title" className="text-base font-bold tracking-tight text-[var(--text)] flex items-center gap-2">
+              {editingTransaction ? <Edit2 className="w-4 h-4 text-[var(--accent)]" /> : <Plus className="w-4 h-4 text-[var(--accent)]" />}
+              <span>{editingTransaction ? 'Edit Expense' : 'Record Expense'}</span>
             </h2>
+            <p className="text-xs text-[var(--text-muted)] font-light mt-0.5">
+              {editingTransaction
+                ? 'Modify your existing expense record in MySQL.'
+                : 'Enter details to insert a new expense into your MySQL database.'}
+            </p>
           </div>
-          <div className="ticket-header-right">
-            <span className="order-status-badge mono">
-              <span className="status-pulse" /> ORDER DESK READY
-            </span>
-            <button type="button" className="close-ticket-btn" onClick={onClose} aria-label="Close modal">
-              ✕
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="p-1 rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg)] transition-colors disabled:opacity-50"
+            aria-label="Close modal"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="ticket-form">
-          {/* Order Side Selector */}
-          <div className="order-side-selector">
-            <span className="form-label mono">ORDER SIDE</span>
-            <div className="side-button-grid">
-              <button
-                type="button"
-                className={`side-btn expense ${type === 'EXPENSE' ? 'active' : ''}`}
-                onClick={() => handleTypeChange('EXPENSE')}
-              >
-                ▼ EXPENSE / DEBIT
-              </button>
-              <button
-                type="button"
-                className={`side-btn income ${type === 'INCOME' ? 'active' : ''}`}
-                onClick={() => handleTypeChange('INCOME')}
-              >
-                ▲ INCOME / CREDIT
-              </button>
-              <button
-                type="button"
-                className={`side-btn transfer ${type === 'TRANSFER' ? 'active' : ''}`}
-                onClick={() => handleTypeChange('TRANSFER')}
-              >
-                ⇄ TRANSFER / MOVE
-              </button>
-            </div>
+        {/* Error Notification Alert */}
+        {error && (
+          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+            <span>{error}</span>
           </div>
+        )}
 
-          {/* Amount Input */}
-          <div className="form-group amount-group">
-            <label htmlFor="tx-amount" className="form-label mono">
-              EXECUTION AMOUNT (USD)
+        {/* Expense Form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 1. Expense Title */}
+          <div className="space-y-1.5">
+            <label htmlFor="expense-title" className="text-xs font-mono text-[var(--text-muted)] uppercase block">
+              Expense Title <span className="text-red-400">*</span>
             </label>
-            <div className="amount-input-wrapper">
-              <span className="currency-prefix mono">$</span>
-              <input
-                id="tx-amount"
-                ref={amountInputRef}
-                type="number"
-                step="0.01"
-                min="0.01"
-                required
-                placeholder="0.00"
-                className="amount-input mono"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-              <span className={`direction-indicator mono ${type.toLowerCase()}`}>
-                {type === 'EXPENSE' ? 'OUTFLOW' : type === 'INCOME' ? 'INFLOW' : 'INTERNAL'}
-              </span>
-            </div>
-          </div>
-
-          {/* Merchant / Counterparty */}
-          <div className="form-group">
-            <div className="label-row">
-              <label htmlFor="tx-merchant" className="form-label mono">
-                COUNTERPARTY / MERCHANT
-              </label>
-              <span className="label-hint mono">REQUIRED</span>
-            </div>
             <input
-              id="tx-merchant"
+              id="expense-title"
+              ref={titleInputRef}
               type="text"
               required
-              placeholder="e.g., Whole Foods Market, Apple, Acme Corp"
-              className="terminal-input"
-              value={merchant}
-              onChange={(e) => setMerchant(e.target.value)}
+              placeholder="e.g. Groceries, Coffee, Swiggy"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              disabled={submitting}
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 py-2 text-xs text-[var(--text)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
-            {/* Quick chips */}
-            <div className="quick-chips">
-              <span className="quick-chips-label mono">QUICK:</span>
-              {QUICK_MERCHANTS[type].slice(0, 4).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  className="chip-btn mono"
-                  onClick={() => setMerchant(m)}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
           </div>
 
-          {/* Category & Account Split Row */}
-          <div className="form-row-2">
-            <div className="form-group">
-              <label htmlFor="tx-category" className="form-label mono">
-                CATEGORY
+          {/* 2. Amount & Category Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Amount */}
+            <div className="space-y-1.5">
+              <label htmlFor="expense-amount" className="text-xs font-mono text-[var(--text-muted)] uppercase block">
+                Amount (₹) <span className="text-red-400">*</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-[var(--text-muted)]">₹</span>
+                <input
+                  id="expense-amount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  placeholder="500"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  disabled={submitting}
+                  className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg pl-7 pr-3 py-2 text-xs font-mono text-[var(--text)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Category */}
+            <div className="space-y-1.5">
+              <label htmlFor="expense-category" className="text-xs font-mono text-[var(--text-muted)] uppercase block">
+                Category
               </label>
               <select
-                id="tx-category"
-                className="terminal-select mono"
+                id="expense-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
+                disabled={submitting}
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-[var(--accent)] transition-colors"
               >
-                {KNOWN_CATEGORIES.map((cat) => (
+                {categories.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
                 ))}
               </select>
             </div>
-
-            <div className="form-group">
-              <label htmlFor="tx-account" className="form-label mono">
-                PAYMENT ACCOUNT
-              </label>
-              <select
-                id="tx-account"
-                className="terminal-select mono"
-                value={account}
-                onChange={(e) => setAccount(e.target.value)}
-              >
-                {KNOWN_ACCOUNTS.map((acc) => (
-                  <option key={acc} value={acc}>
-                    {acc}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
 
-          {/* Timestamp & Status Split Row */}
-          <div className="form-row-2">
-            <div className="form-group">
-              <label htmlFor="tx-timestamp" className="form-label mono">
-                TIMESTAMP (ISO / UTC)
-              </label>
-              <input
-                id="tx-timestamp"
-                type="text"
-                required
-                className="terminal-input mono"
-                value={timestamp}
-                onChange={(e) => setTimestamp(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="tx-status" className="form-label mono">
-                CLEARING STATUS
-              </label>
-              <select
-                id="tx-status"
-                className="terminal-select mono"
-                value={status}
-                onChange={(e) => setStatus(e.target.value as 'SETTLED' | 'PENDING')}
-              >
-                <option value="SETTLED">SETTLED / RECONCILED</option>
-                <option value="PENDING">PENDING / AUTHORIZATION</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Notes / Memo */}
-          <div className="form-group">
-            <label htmlFor="tx-notes" className="form-label mono">
-              MEMO / TRANSACTION NOTES (OPTIONAL)
+          {/* 3. Date */}
+          <div className="space-y-1.5">
+            <label htmlFor="expense-date" className="text-xs font-mono text-[var(--text-muted)] uppercase block">
+              Expense Date
             </label>
             <input
-              id="tx-notes"
-              type="text"
-              placeholder="e.g. Receipt verified, quarterly business expense, tax deductible"
-              className="terminal-input"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              id="expense-date"
+              type="date"
+              required
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              disabled={submitting}
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 py-2 text-xs font-mono text-[var(--text)] focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
 
-          {/* Impact Preview Box */}
-          <div className="ticket-impact-box mono">
-            <div className="impact-col">
-              <span className="impact-label">FLOW DIRECTION</span>
-              <strong className={type.toLowerCase()}>{type}</strong>
-            </div>
-            <div className="impact-col">
-              <span className="impact-label">NET IMPACT</span>
-              <strong className={signedAmount >= 0 ? 'positive' : 'negative'}>
-                {signedAmount >= 0 ? '+' : '−'}${Math.abs(signedAmount).toFixed(2)}
-              </strong>
-            </div>
-            <div className="impact-col">
-              <span className="impact-label">EST. LIQUIDITY</span>
-              <strong className="positive">${projectedLiquidity.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
-            </div>
+          {/* 4. Notes */}
+          <div className="space-y-1.5">
+            <label htmlFor="expense-notes" className="text-xs font-mono text-[var(--text-muted)] uppercase block">
+              Notes <span className="text-[var(--text-muted)] font-normal lowercase">(optional)</span>
+            </label>
+            <input
+              id="expense-notes"
+              type="text"
+              placeholder="e.g. Weekly grocery shopping at supermarket"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={submitting}
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 py-2 text-xs text-[var(--text)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
           </div>
 
-          {/* Ticket Footer Actions */}
-          <div className="ticket-actions">
-            <button type="button" className="btn-cancel mono" onClick={onClose}>
-              CANCEL (ESC)
+          {/* Actions Footer */}
+          <div className="pt-4 border-t border-[var(--border)] flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="px-4 py-2 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg)] transition-colors disabled:opacity-50"
+            >
+              Cancel
             </button>
-            <button type="submit" className={`btn-submit mono ${type.toLowerCase()}`}>
-              {editingTransaction ? 'UPDATE TICKET (↵)' : 'EXECUTE ORDER // RECORD (↵)'}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4.5 py-2 rounded-lg bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+            >
+              {submitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+              <span>{submitting ? 'Saving...' : editingTransaction ? 'Update Expense' : 'Record Expense'}</span>
             </button>
           </div>
         </form>

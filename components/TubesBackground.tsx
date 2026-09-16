@@ -1,113 +1,98 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react';
-import { cn } from '@/lib/utils';
+import React, { useRef, useState, useEffect } from 'react'
+import { cn } from '@/lib/utils'
 
-// Helper for random colors
-const randomColors = (count: number) => {
-  return new Array(count)
+const randomColors = (count: number) =>
+  Array(count)
     .fill(0)
-    .map(() => "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'));
-};
+    .map(() => '#' + Math.floor(0xffffff * Math.random()).toString(16).padStart(6, '0'))
 
 interface TubesBackgroundProps {
-  children?: React.ReactNode;
-  className?: string;
-  enableClickInteraction?: boolean;
-  onColorChange?: (color: string) => void;
+  children?: React.ReactNode
+  className?: string
+  enableClickInteraction?: boolean
+  onColorChange?: (color: string) => void
 }
 
-export function TubesBackground({ 
-  children, 
+export function TubesBackground({
+  children,
   className,
   enableClickInteraction = true,
-  onColorChange
+  onColorChange,
 }: TubesBackgroundProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const tubesRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [, setIsLoaded] = useState(false)
+  const tubesInstance = useRef<any>(null)
 
   useEffect(() => {
-    let mounted = true;
-    let cleanup: (() => void) | undefined;
+    let cleanup: (() => void) | undefined
+    let isMounted = true
 
-    const initTubes = async () => {
-      if (!canvasRef.current) return;
+    ;(async () => {
+      if (canvasRef.current) {
+        try {
+          const TubesCursor = (
+            await Function(
+              'return import("https://cdn.jsdelivr.net/npm/threejs-components@0.0.19/build/cursors/tubes1.min.js")'
+            )()
+          ).default
 
-      try {
-        // Bypass Turbopack/Webpack completely by evaluating the import at runtime
-        const module = await new Function('return import("https://cdn.jsdelivr.net/npm/threejs-components@0.0.19/build/cursors/tubes1.min.js")')();
-        const TubesCursor = module.default;
+          if (!isMounted) return
 
-        if (!mounted) return;
+          tubesInstance.current = TubesCursor(canvasRef.current, {
+            tubes: {
+              colors: ['#f967fb', '#53bc28', '#6958d5'],
+              lights: {
+                intensity: 200,
+                colors: ['#83f36e', '#fe8a2e', '#ff008a', '#60aed5'],
+              },
+            },
+          })
 
-        const app = TubesCursor(canvasRef.current, {
-          tubes: {
-            colors: ["#f967fb", "#53bc28", "#6958d5"],
-            lights: {
-              intensity: 200,
-              colors: ["#83f36e", "#fe8a2e", "#ff008a", "#60aed5"]
-            }
+          setIsLoaded(true)
+
+          const handleResize = () => {}
+          window.addEventListener('resize', handleResize)
+          cleanup = () => {
+            window.removeEventListener('resize', handleResize)
           }
-        });
-
-        tubesRef.current = app;
-        setIsLoaded(true);
-
-        const handleResize = () => {
-          // Library handles basic resizing, added here for future extension
-        };
-
-        window.addEventListener('resize', handleResize);
-        
-        cleanup = () => {
-          window.removeEventListener('resize', handleResize);
-        };
-
-      } catch (error) {
-        console.error("Failed to load TubesCursor:", error);
+        } catch (error) {
+          console.error('Failed to load TubesCursor:', error)
+        }
       }
-    };
-
-    initTubes();
+    })()
 
     return () => {
-      mounted = false;
-      if (cleanup) cleanup();
-    };
-  }, []);
+      isMounted = false
+      if (cleanup) cleanup()
+    }
+  }, [])
 
   const handleClick = () => {
-    if (!enableClickInteraction || !tubesRef.current) return;
-    
-    const colors = randomColors(3);
-    const lightsColors = randomColors(4);
-    
-    tubesRef.current.tubes.setColors(colors);
-    tubesRef.current.tubes.setLightsColors(lightsColors);
-    
+    if (!enableClickInteraction || !tubesInstance.current) return
+    const newTubesColors = randomColors(3)
+    const newLightsColors = randomColors(4)
+    tubesInstance.current.tubes.setColors(newTubesColors)
+    tubesInstance.current.tubes.setLightsColors(newLightsColors)
     if (onColorChange) {
-      onColorChange(colors[0]);
+      onColorChange(newTubesColors[0])
     }
-  };
+  }
 
   return (
-    <div 
-      className={cn("relative w-full h-full min-h-[400px] overflow-hidden bg-black", className)}
+    <div
+      className={cn('relative w-full h-full min-h-[400px] overflow-hidden bg-black', className)}
       onClick={handleClick}
     >
-      <canvas 
-        ref={canvasRef} 
+      <canvas
+        ref={canvasRef}
         className="absolute inset-0 w-full h-full block"
         style={{ touchAction: 'none' }}
       />
-      
-      {/* Content Overlay */}
       <div className="relative z-10 w-full h-full pointer-events-none">
         {children}
       </div>
     </div>
-  );
+  )
 }
-
-export default TubesBackground;
