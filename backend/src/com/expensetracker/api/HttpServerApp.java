@@ -18,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Date;
 import java.util.*;
 
+import com.expensetracker.util.DatabaseInitializer;
+
 public class HttpServerApp {
 
     private static final int PORT = System.getenv("PORT") != null ? Integer.parseInt(System.getenv("PORT")) : 8080;
@@ -28,6 +30,9 @@ public class HttpServerApp {
     private static final UserDAO userDAO = new UserDAOImpl();
 
     public static void main(String[] args) throws IOException {
+        // Automatic database schema initialization/verification on server startup
+        DatabaseInitializer.initializeSchema();
+
         HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
 
         // Register API Context Handlers

@@ -9,7 +9,8 @@ To run the Personal Expense Tracker locally, you need to configure the MySQL dat
 
 ## 1. Database Setup
 1. Open your MySQL client (e.g., MySQL Workbench, DBeaver, or command line).
-2. Run the SQL script located at `backend/schema.sql` to create the `expense_tracker_db` database and all necessary tables.
+2. Run the SQL script located at `backend/schema.sql` to create the `expense_tracker_db` database and all necessary tables manually if desired.
+   *Note: The Core Java backend also automatically initializes and verifies all required tables (`users`, `spending_profile`, `budgets`, `expenses`) on startup via `DatabaseInitializer` if they do not exist.*
 
 ## 2. Java Backend Configuration
 1. **Download the MySQL JDBC Driver**:
