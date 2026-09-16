@@ -20,7 +20,7 @@ import java.util.*;
 
 public class HttpServerApp {
 
-    private static final int PORT = 8080;
+    private static final int PORT = System.getenv("PORT") != null ? Integer.parseInt(System.getenv("PORT")) : 8080;
     private static final AuthService authService = new AuthService();
     private static final OnboardingService onboardingService = new OnboardingService();
     private static final ExpenseService expenseService = new ExpenseService();
