@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        message: `Failed to connect to backend server: ${error.message}`,
+        message: `Database connection error during login: ${error.message || 'Unable to establish database connection.'}`,
         user: null,
       },
       { status: 500 }
