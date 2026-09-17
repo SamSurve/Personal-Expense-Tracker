@@ -4,9 +4,10 @@ FROM eclipse-temurin:17-jdk-alpine
 WORKDIR /app
 
 # Copy backend sources and library dependencies
-COPY src ./src
-COPY lib ./lib
-COPY schema.sql ./schema.sql
+COPY . .
+
+# Support build context from either root or backend subfolder
+RUN if [ -d "backend/src" ]; then cp -r backend/src ./src && cp -r backend/lib ./lib && cp backend/schema.sql ./schema.sql; fi
 
 # Compile Java source files to bin directory
 RUN mkdir -p bin && javac -cp "lib/*" -d bin $(find src -name "*.java")

@@ -38,3 +38,11 @@ Double-click the `start.bat` file in the project root, or run it from the termin
 - It will start the Next.js frontend in the current terminal window on `http://localhost:3000`.
 
 **Note:** The first time you run `start.bat`, it will check if you placed the MySQL driver in `backend/lib`. If it's missing, the script will pause and ask you to download it first.
+
+## 5. Vercel Production Deployment (Serverless / No Railway Required)
+In production on Vercel, the application operates serverlessly using Next.js App Router API routes (`/api/...`) connecting directly to your hosted MySQL database (Railway MySQL, Aiven, PlanetScale, etc.):
+1. Import the repository into **Vercel**.
+2. Add the database connection variable in Vercel **Settings -> Environment Variables**:
+   - `MYSQL_URL`: `mysql://<user>:<password>@<host>:<port>/<database>` (or `DATABASE_URL`)
+3. Deploy! On first access, the Next.js API automatically creates all required tables (`users`, `spending_profile`, `budgets`, `expenses`) idempotently without needing manual SQL setup.
+4. The Core Java HTTP backend remains intact in `backend/` for local development and academic evaluation.

@@ -1,6 +1,5 @@
-// Lightweight API Integration Client connecting Next.js to Core Java HTTP Server (Port 8080)
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+// API Integration Client connecting to same-origin /api routes (Vercel) or custom backend URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api'
 
 export interface UserDTO {
   userId: number
