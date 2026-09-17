@@ -6,14 +6,22 @@ export function getDbPool(): Pool {
   if (!pool) {
     const connectionUri = process.env.MYSQL_URL || process.env.DATABASE_URL
     if (connectionUri) {
+      let sslOptions: any = { rejectUnauthorized: false }
+      if (process.env.MYSQL_SSL === 'false') {
+        sslOptions = undefined
+      }
       pool = mysql.createPool({
         uri: connectionUri,
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,
-        ssl: process.env.MYSQL_SSL === 'false' ? undefined : { rejectUnauthorized: false },
+        ssl: sslOptions,
       })
     } else {
+      let sslOptions: any = undefined
+      if (process.env.MYSQL_SSL === 'true' || process.env.MYSQL_HOST?.includes('tidb') || process.env.DB_HOST?.includes('tidb')) {
+        sslOptions = { rejectUnauthorized: false }
+      }
       pool = mysql.createPool({
         host: process.env.MYSQL_HOST || process.env.DB_HOST || 'localhost',
         port: parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || '3306', 10),
@@ -23,7 +31,7 @@ export function getDbPool(): Pool {
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,
-        ssl: process.env.MYSQL_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+        ssl: sslOptions,
       })
     }
   }
