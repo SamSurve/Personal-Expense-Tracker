@@ -14,6 +14,7 @@ import {
   apiDeleteExpense,
   apiUpdateSettings,
   apiSimulateWhatIf,
+  apiLogout,
   DashboardSummaryDTO,
   UserProfileDTO,
   WhatIfSimulationDTO,
@@ -106,8 +107,8 @@ import { WalkingDoraemon } from '@/components/WalkingDoraemon'
 import { ImpactDrawer } from '@/components/ImpactDrawer'
 
 export default function DashboardPage() {
-  // User Profile & Financial baseline state (100% Real from MySQL)
-  const [userId, setUserId] = useState<number>(1)
+  // User Profile & Financial baseline state (100% Real from Firestore/MySQL)
+  const [userId, setUserId] = useState<number | string>(1)
   const [userName, setUserName] = useState<string>('User')
   const [userEmail, setUserEmail] = useState<string>('')
   const [monthlyIncome, setMonthlyIncome] = useState<number>(0)
@@ -138,8 +139,8 @@ export default function DashboardPage() {
   const [showHealthWhy, setShowHealthWhy] = useState<boolean>(true)
 
   // Feature 1: What-If Purchase Simulator State
-  const [whatIfAmount, setWhatIfAmount] = useState<string>('2500')
-  const [whatIfCategory, setWhatIfCategory] = useState<string>('Food & Dining')
+  const [whatIfAmount, setWhatIfAmount] = useState<string>('3000')
+  const [whatIfCategory, setWhatIfCategory] = useState<string>('Dining')
   const [whatIfResult, setWhatIfResult] = useState<WhatIfSimulationDTO | null>(null)
   const [whatIfLoading, setWhatIfLoading] = useState<boolean>(false)
 
@@ -151,63 +152,6 @@ export default function DashboardPage() {
       const res = await apiSimulateWhatIf(userId, amt, whatIfCategory)
       if (res) {
         setWhatIfResult(res)
-      } else {
-        // Fallback calculation derived strictly from current loaded MySQL metrics
-        const currentSafe = summaryData?.spendingPace?.safeToSpend ?? Math.max(0, monthlyIncome - savingsGoal - totalSpent)
-        const daysElapsed = summaryData?.spendingPace?.daysElapsed ?? 16
-        const daysInMonth = summaryData?.spendingPace?.daysInMonth ?? 30
-        const daysRemaining = Math.max(1, daysInMonth - daysElapsed + 1)
-        const currentDaily = currentSafe / daysRemaining
-        const simSafe = Math.max(0, currentSafe - amt)
-        const simDaily = simSafe / daysRemaining
-        const curHealth = summaryData?.spendingHealth?.score ?? 80
-        const curLabel = summaryData?.spendingHealth?.healthLabel ?? 'Healthy pace'
-        const healthDelta = Math.round(amt / 1000) * -2
-        const simHealth = Math.max(0, Math.min(100, curHealth + healthDelta))
-        const simLabel = simHealth >= 85 ? 'Optimal pace' : simHealth >= 70 ? 'Healthy pace' : simHealth >= 50 ? 'Watch pace' : 'High spend pace'
-
-        const catCurrent = categoryBudgets[whatIfCategory] ? (summaryData?.categoryComparisons?.find(c => c.categoryName === whatIfCategory)?.actualAmount ?? 0) : 0
-        const catBaseline = categoryBudgets[whatIfCategory] ?? DEFAULT_CATEGORY_BENCHMARKS[whatIfCategory] ?? 3000
-        const catSim = catCurrent + amt
-        const isExceeded = catSim > catBaseline
-
-        let narrative = `If you spend ₹${amt.toLocaleString('en-IN')} on ${whatIfCategory}: `
-        if (isExceeded) {
-          narrative += `It will push your ${whatIfCategory} category budget over its baseline (₹${catSim.toLocaleString('en-IN')} vs ₹${catBaseline.toLocaleString('en-IN')} limit). `
-        } else {
-          narrative += `Your ${whatIfCategory} spending remains within baseline target (₹${catSim.toLocaleString('en-IN')} / ₹${catBaseline.toLocaleString('en-IN')}). `
-        }
-        if (healthDelta < 0) {
-          narrative += `Your Spending Health score drops by ${Math.abs(healthDelta)} points (from ${curHealth} to ${simHealth}, '${simLabel}'). `
-        } else {
-          narrative += `Your Spending Health score remains '${simLabel}' (${simHealth}/100). `
-        }
-        narrative += `Daily safe allowance changes from ₹${currentDaily.toFixed(2)}/day to ₹${simDaily.toFixed(2)}/day for the remaining ${daysRemaining} days of the month.`
-
-        setWhatIfResult({
-          purchaseAmount: amt,
-          categoryName: whatIfCategory,
-          currentSafeToSpend: currentSafe,
-          simulatedSafeToSpend: simSafe,
-          safeToSpendDelta: simSafe - currentSafe,
-          currentDailySafeSpend: Math.round(currentDaily * 100) / 100,
-          simulatedDailySafeSpend: Math.round(simDaily * 100) / 100,
-          dailySafeSpendDelta: Math.round((simDaily - currentDaily) * 100) / 100,
-          currentPaceStatus: summaryData?.spendingPace?.paceStatus ?? 'ON TRACK',
-          simulatedPaceStatus: simSafe < 5000 ? 'ABOVE PACE' : 'ON TRACK',
-          currentProjectedSpend: summaryData?.spendingPace?.projectedMonthSpend ?? 0,
-          simulatedProjectedSpend: (summaryData?.spendingPace?.projectedMonthSpend ?? 0) + amt,
-          currentHealthScore: curHealth,
-          simulatedHealthScore: simHealth,
-          healthScoreDelta: healthDelta,
-          currentHealthLabel: curLabel,
-          simulatedHealthLabel: simLabel,
-          categoryCurrentSpent: catCurrent,
-          categoryBaseline: catBaseline,
-          categorySimulatedSpent: catSim,
-          categoryExceeded: isExceeded,
-          impactNarrative: narrative,
-        })
       }
     } catch (e) {
       console.error('Simulation error:', e)
@@ -229,8 +173,8 @@ export default function DashboardPage() {
   // Current Date display
   const [currentDateStr, setCurrentDateStr] = useState('')
 
-  // 1. Data Loader connecting to Java Backend API -> JDBC -> MySQL
-  const loadDashboardData = useCallback(async (activeUserId: number, tf: string = timeframe) => {
+  // 1. Data Loader connecting to Firestore / Backend API
+  const loadDashboardData = useCallback(async (activeUserId: number | string, tf: string = timeframe) => {
     try {
       const [profile, summary, apiTxs] = await Promise.all([
         apiGetUserProfile(activeUserId),
@@ -288,15 +232,16 @@ export default function DashboardPage() {
 
   // Initial Mount
   useEffect(() => {
-    let resolvedUserId = 1
+    let resolvedUserId: string | number = 1
     if (typeof window !== 'undefined') {
+      const storedUid = localStorage.getItem('firebase_uid')
       const storedId = localStorage.getItem('user_id')
-      if (storedId) {
-        const parsed = parseInt(storedId, 10)
-        if (!isNaN(parsed) && parsed > 0) {
-          resolvedUserId = parsed
-          setUserId(parsed)
-        }
+      if (storedUid) {
+        resolvedUserId = storedUid
+        setUserId(storedUid)
+      } else if (storedId) {
+        resolvedUserId = storedId
+        setUserId(storedId)
       }
 
       const storedName = localStorage.getItem('user_setup_name')
@@ -401,10 +346,10 @@ export default function DashboardPage() {
   const handleSaveTransaction = async (txData: Omit<Transaction, 'balance'>) => {
     try {
       if (editingTx) {
-        const expenseIdNum = parseInt(editingTx.id.replace('TX-', ''), 10)
-        if (expenseIdNum > 0) {
+        const rawExpenseId = editingTx.id.replace(/^TX-/, '')
+        if (rawExpenseId) {
           const res = await apiUpdateExpense({
-            expenseId: expenseIdNum,
+            expenseId: rawExpenseId,
             userId,
             title: txData.merchant,
             categoryName: txData.category,
@@ -428,7 +373,7 @@ export default function DashboardPage() {
           txData.notes
         )
         if (res.success) {
-          showToast(`Recorded expense "${txData.merchant}" (₹${Math.abs(txData.amount)}) into MySQL`)
+          showToast(`Recorded expense "${txData.merchant}" (₹${Math.abs(txData.amount)})`)
         } else {
           throw new Error(res.message || 'Failed to record expense')
         }
@@ -447,10 +392,10 @@ export default function DashboardPage() {
 
   // 5. Delete Expense Handler
   const handleDeleteTransaction = async (id: string) => {
-    const expenseIdNum = parseInt(id.replace('TX-', ''), 10)
-    if (expenseIdNum > 0) {
+    const rawExpenseId = id.replace(/^TX-/, '')
+    if (rawExpenseId) {
       try {
-        const res = await apiDeleteExpense(expenseIdNum, userId)
+        const res = await apiDeleteExpense(rawExpenseId, userId)
         if (res.success) {
           showToast('Expense successfully removed from database')
         }
@@ -697,13 +642,17 @@ export default function DashboardPage() {
             {/* Top-Right Light/Dark Theme Toggle */}
             <ThemeToggle />
 
-            <Link
-              href="/login"
-              className="p-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+            <button
+              type="button"
+              onClick={async () => {
+                await apiLogout()
+                window.location.href = '/login'
+              }}
+              className="p-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
               title="Sign Out"
             >
               <LogOut className="w-4 h-4" />
-            </Link>
+            </button>
           </div>
         </header>
 
