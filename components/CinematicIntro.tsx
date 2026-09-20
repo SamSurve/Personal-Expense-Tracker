@@ -14,7 +14,7 @@ export function CinematicIntro({ onEnter }: CinematicIntroProps) {
 
   return (
     <div className="fixed inset-0 z-50 w-full h-screen font-sans bg-black select-none">
-      <TubesBackground onColorChange={setThemeColor}>
+      <TubesBackground onColorChange={setThemeColor} className="w-full h-full">
         <div className="flex flex-col items-center justify-center w-full h-full gap-8 text-center px-4">
           <div className="space-y-4 pointer-events-auto cursor-default">
             <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-[9rem] font-bold tracking-tighter text-white drop-shadow-[0_0_40px_rgba(0,0,0,0.8)] select-none uppercase leading-none">

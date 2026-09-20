@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { ArrowLeft, ArrowRight, Check, DollarSign, User, ShieldCheck, PieChart, Layers } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, DollarSign, User, ShieldCheck, PieChart, Layers, AlertCircle } from 'lucide-react'
 
 // Default available categories
 const DEFAULT_CATEGORIES = [
@@ -20,6 +20,9 @@ const DEFAULT_CATEGORIES = [
 export default function SetupPage() {
   const router = useRouter()
   const [step, setStep] = useState<1 | 2 | 3>(1)
+  const isSubmittingRef = useRef(false)
+  const [finishing, setFinishing] = useState(false)
+  const [finishError, setFinishError] = useState('')
 
   // Step 1 State: Name
   const [userName, setUserName] = useState('')
@@ -42,12 +45,17 @@ export default function SetupPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const storedUid = localStorage.getItem('firebase_uid') || localStorage.getItem('user_id')
+      if (!storedUid) {
+        router.push('/signup')
+        return
+      }
       const storedName = localStorage.getItem('user_setup_name')
       if (storedName) {
         setUserName(storedName)
       }
     }
-  }, [])
+  }, [router])
 
   const toggleCategory = (id: string) => {
     setSelectedCategoryIds((prev) =>
@@ -61,6 +69,14 @@ export default function SetupPage() {
 
   const handleFinish = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (isSubmittingRef.current || finishing) {
+      return
+    }
+
+    isSubmittingRef.current = true
+    setFinishing(true)
+    setFinishError('')
     
     let userId: string | number = 1
     if (typeof window !== 'undefined') {
@@ -93,15 +109,28 @@ export default function SetupPage() {
       categoryMap[name] = parseFloat(categoryBudgets[id] || '0') || 0
     })
 
-    const { apiSaveOnboarding } = await import('@/lib/api')
-    await apiSaveOnboarding(
-      userId,
-      parseFloat(monthlyIncome) || 0,
-      parseFloat(savingsTarget) || 0,
-      categoryMap
-    )
+    try {
+      const { apiSaveOnboarding } = await import('@/lib/api')
+      const res = await apiSaveOnboarding(
+        userId,
+        parseFloat(monthlyIncome) || 0,
+        parseFloat(savingsTarget) || 0,
+        categoryMap
+      )
 
-    router.push('/dashboard')
+      if (!res.success) {
+        setFinishError(res.message || 'Failed to save setup profile.')
+        setFinishing(false)
+        isSubmittingRef.current = false
+        return
+      }
+
+      router.push('/dashboard')
+    } catch (err: any) {
+      setFinishError(err?.message || 'An unexpected error occurred.')
+      setFinishing(false)
+      isSubmittingRef.current = false
+    }
   }
 
   return (
@@ -312,20 +341,36 @@ export default function SetupPage() {
                 })}
               </div>
 
+              {finishError && (
+                <div className="mb-4 p-3 rounded-md bg-[var(--danger-bg)] border border-[var(--danger-border)] text-[var(--danger)] text-xs flex items-center gap-2 font-mono">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{finishError}</span>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  className="w-1/3 border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] rounded-md py-3 font-medium text-sm hover:bg-[var(--panel-hover)] transition-colors"
+                  disabled={finishing}
+                  className="w-1/3 border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] rounded-md py-3 font-medium text-sm hover:bg-[var(--panel-hover)] transition-colors disabled:opacity-50"
                 >
                   Back
                 </button>
                 <button
                   type="submit"
-                  className="w-2/3 bg-[var(--text)] text-[var(--bg)] rounded-md py-3 font-medium text-sm hover:opacity-90 transition-opacity shadow-sm flex items-center justify-center gap-2"
+                  disabled={finishing}
+                  className="w-2/3 bg-[var(--text)] text-[var(--bg)] rounded-md py-3 font-medium text-sm hover:opacity-90 transition-opacity shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  Complete Setup → Dashboard
+                  {finishing ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-[var(--bg)] border-t-transparent rounded-full animate-spin" />
+                      <span>Saving Setup...</span>
+                    </>
+                  ) : (
+                    <span>Complete Setup → Dashboard</span>
+                  )}
                 </button>
               </div>
             </form>

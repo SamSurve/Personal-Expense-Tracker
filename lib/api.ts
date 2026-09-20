@@ -151,12 +151,24 @@ function getActiveUid(fallbackUserId?: number | string): string | null {
   return null
 }
 
+// Guard against duplicate concurrent signups for the same email
+let inFlightSignupEmail: string | null = null
+
 // 1. Signup API via Firebase Authentication
 export async function apiSignup(name: string, email: string, password: string): Promise<AuthResponse> {
-  try {
-    const cleanEmail = email.trim().toLowerCase()
-    const cleanName = name.trim()
+  const cleanEmail = email.trim().toLowerCase()
+  const cleanName = name.trim()
 
+  if (inFlightSignupEmail === cleanEmail) {
+    return {
+      success: false,
+      message: 'Signup is already in progress. Please wait.',
+    }
+  }
+
+  inFlightSignupEmail = cleanEmail
+
+  try {
     const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password)
     const user = userCredential.user
 
@@ -193,18 +205,24 @@ export async function apiSignup(name: string, email: string, password: string): 
       },
     }
   } catch (error: any) {
-    let msg = error.message || 'Signup failed'
+    let msg = 'Signup failed. Please try again.'
     if (error.code === 'auth/email-already-in-use') {
-      msg = 'An account with this email address already exists.'
+      msg = 'An account with this email already exists. Please log in.'
     } else if (error.code === 'auth/invalid-email') {
       msg = 'Please enter a valid email address.'
     } else if (error.code === 'auth/weak-password') {
       msg = 'Password must be at least 6 characters long.'
+    } else if (error.code === 'auth/network-request-failed') {
+      msg = 'Network connection failed. Please check your internet connection.'
+    } else if (error.message) {
+      msg = error.message
     }
     return {
       success: false,
       message: msg,
     }
+  } finally {
+    inFlightSignupEmail = null
   }
 }
 
@@ -237,12 +255,18 @@ export async function apiLogin(email: string, password: string): Promise<AuthRes
     }
   } catch (error: any) {
     let msg = 'Invalid email or password credentials.'
-    if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-      msg = 'No user found with the provided credentials.'
+    if (error.code === 'auth/user-not-found') {
+      msg = 'No account found with this email address.'
     } else if (error.code === 'auth/wrong-password') {
-      msg = 'Invalid password credentials.'
+      msg = 'Incorrect password. Please try again.'
+    } else if (error.code === 'auth/invalid-credential') {
+      msg = 'Invalid email or password credentials.'
+    } else if (error.code === 'auth/invalid-email') {
+      msg = 'Please enter a valid email address.'
     } else if (error.code === 'auth/too-many-requests') {
       msg = 'Access temporarily disabled due to many failed attempts. Try again later.'
+    } else if (error.code === 'auth/network-request-failed') {
+      msg = 'Network connection failed. Please check your internet connection.'
     }
     return {
       success: false,

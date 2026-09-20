@@ -297,17 +297,14 @@ export default function DashboardPage() {
 
   // Initial Mount
   useEffect(() => {
-    let resolvedUserId: string | number = 1
     if (typeof window !== 'undefined') {
-      const storedUid = localStorage.getItem('firebase_uid')
-      const storedId = localStorage.getItem('user_id')
-      if (storedUid) {
-        resolvedUserId = storedUid
-        setUserId(storedUid)
-      } else if (storedId) {
-        resolvedUserId = storedId
-        setUserId(storedId)
+      const storedUid = localStorage.getItem('firebase_uid') || localStorage.getItem('user_id')
+      if (!storedUid) {
+        window.location.href = '/login'
+        return
       }
+
+      setUserId(storedUid)
 
       const storedName = localStorage.getItem('user_setup_name')
       if (storedName) {
@@ -321,9 +318,9 @@ export default function DashboardPage() {
       // Formatted Date
       const options: Intl.DateTimeFormatOptions = { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }
       setCurrentDateStr(new Date().toLocaleDateString('en-GB', options))
-    }
 
-    loadDashboardData(resolvedUserId, timeframe)
+      loadDashboardData(storedUid, timeframe)
+    }
   }, [loadDashboardData, timeframe])
 
   // Handle Timeframe Change

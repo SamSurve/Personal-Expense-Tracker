@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -14,30 +14,55 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const isSubmittingRef = useRef(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
-    setLoading(true)
 
-    const { apiLogin } = await import('@/lib/api')
-    const res = await apiLogin(email.trim(), password)
-    setLoading(false)
-
-    if (!res.success) {
-      setError(res.message || 'Login failed. Please check your credentials.')
+    if (isSubmittingRef.current || loading) {
       return
     }
 
-    if (typeof window !== 'undefined') {
-      if (res.user?.name) {
-        localStorage.setItem('user_setup_name', res.user.name)
-      }
-      if (res.user?.userId) {
-        localStorage.setItem('user_id', String(res.user.userId))
-      }
+    setError('')
+
+    if (!email.trim()) {
+      setError('Please enter your email address.')
+      return
     }
-    router.push('/dashboard')
+    if (!password) {
+      setError('Please enter your password.')
+      return
+    }
+
+    isSubmittingRef.current = true
+    setLoading(true)
+
+    try {
+      const { apiLogin } = await import('@/lib/api')
+      const res = await apiLogin(email.trim(), password)
+
+      if (!res.success) {
+        setError(res.message || 'Login failed. Please check your credentials.')
+        setLoading(false)
+        isSubmittingRef.current = false
+        return
+      }
+
+      if (typeof window !== 'undefined') {
+        if (res.user?.name) {
+          localStorage.setItem('user_setup_name', res.user.name)
+        }
+        if (res.user?.userId) {
+          localStorage.setItem('user_id', String(res.user.userId))
+          localStorage.setItem('firebase_uid', String(res.user.userId))
+        }
+      }
+      router.push('/dashboard')
+    } catch (err: any) {
+      setError(err?.message || 'An unexpected error occurred during sign in.')
+      setLoading(false)
+      isSubmittingRef.current = false
+    }
   }
 
   return (
@@ -134,9 +159,17 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className="w-full bg-[var(--text)] text-[var(--bg)] rounded-md py-2.5 font-medium text-sm hover:opacity-90 transition-opacity shadow-sm mt-2"
+              disabled={loading}
+              className="w-full bg-[var(--text)] text-[var(--bg)] rounded-md py-2.5 font-medium text-sm hover:opacity-90 transition-opacity shadow-sm mt-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
             >
-              Sign In to Ledger
+              {loading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-[var(--bg)] border-t-transparent rounded-full animate-spin" />
+                  <span>Signing In...</span>
+                </>
+              ) : (
+                <span>Sign In to Ledger</span>
+              )}
             </button>
           </form>
 

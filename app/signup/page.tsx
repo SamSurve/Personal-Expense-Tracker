@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -15,19 +15,26 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [agreeTerms, setAgreeTerms] = useState(false)
   const [error, setError] = useState('')
-
   const [loading, setLoading] = useState(false)
+  const isSubmittingRef = useRef(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Prevent duplicate submissions
+    if (isSubmittingRef.current || loading) {
+      return
+    }
+
     setError('')
 
-    // Validation UI checks
+    // 1. Validation UI checks
     if (!fullName.trim()) {
       setError('Please enter your full name.')
       return
     }
-    if (!email.includes('@') || !email.includes('.')) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!email.trim() || !emailRegex.test(email.trim())) {
       setError('Please enter a valid email address.')
       return
     }
@@ -44,23 +51,34 @@ export default function SignupPage() {
       return
     }
 
+    isSubmittingRef.current = true
     setLoading(true)
-    const { apiSignup } = await import('@/lib/api')
-    const res = await apiSignup(fullName.trim(), email.trim(), password)
-    setLoading(false)
 
-    if (!res.success) {
-      setError(res.message || 'Signup failed. Please try again.')
-      return
-    }
+    try {
+      const { apiSignup } = await import('@/lib/api')
+      const res = await apiSignup(fullName.trim(), email.trim(), password)
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('user_setup_name', fullName.trim())
-      if (res.user?.userId) {
-        localStorage.setItem('user_id', String(res.user.userId))
+      if (!res.success) {
+        setError(res.message || 'Signup failed. Please try again.')
+        setLoading(false)
+        isSubmittingRef.current = false
+        return
       }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('user_setup_name', fullName.trim())
+        if (res.user?.userId) {
+          localStorage.setItem('user_id', String(res.user.userId))
+          localStorage.setItem('firebase_uid', String(res.user.userId))
+        }
+      }
+
+      router.push('/setup')
+    } catch (err: any) {
+      setError(err?.message || 'An unexpected error occurred during signup.')
+      setLoading(false)
+      isSubmittingRef.current = false
     }
-    router.push('/setup')
   }
 
   return (
@@ -91,9 +109,19 @@ export default function SignupPage() {
           </div>
 
           {error && (
-            <div className="mb-6 p-3 rounded-md bg-[var(--danger-bg)] border border-[var(--danger-border)] text-[var(--danger)] text-xs flex items-center gap-2 font-mono">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{error}</span>
+            <div className="mb-6 p-3 rounded-md bg-[var(--danger-bg)] border border-[var(--danger-border)] text-[var(--danger)] text-xs flex items-center justify-between gap-2 font-mono">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+              {error.includes('already exists') && (
+                <Link
+                  href="/login"
+                  className="underline font-bold hover:opacity-80 shrink-0 text-xs"
+                >
+                  Sign in →
+                </Link>
+              )}
             </div>
           )}
 
@@ -190,9 +218,17 @@ export default function SignupPage() {
 
             <button
               type="submit"
-              className="w-full bg-[var(--text)] text-[var(--bg)] rounded-md py-2.5 font-medium text-sm hover:opacity-90 transition-opacity shadow-sm mt-3"
+              disabled={loading}
+              className="w-full bg-[var(--text)] text-[var(--bg)] rounded-md py-2.5 font-medium text-sm hover:opacity-90 transition-opacity shadow-sm mt-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
             >
-              Continue to Setup →
+              {loading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-[var(--bg)] border-t-transparent rounded-full animate-spin" />
+                  <span>Creating account...</span>
+                </>
+              ) : (
+                <span>Continue to Setup →</span>
+              )}
             </button>
           </form>
 
