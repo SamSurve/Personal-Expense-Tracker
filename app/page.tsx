@@ -77,8 +77,8 @@ export default function LandingPage() {
         <motion.div
           key="intro"
           className="fixed inset-0 z-50 w-full h-screen overflow-hidden"
-          exit={{ opacity: 0, scale: 1.05 }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.5 }}
         >
           <CinematicIntro onEnter={handleEnterExperience} />
         </motion.div>
