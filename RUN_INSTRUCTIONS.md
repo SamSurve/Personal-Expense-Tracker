@@ -39,10 +39,16 @@ Double-click the `start.bat` file in the project root, or run it from the termin
 
 **Note:** The first time you run `start.bat`, it will check if you placed the MySQL driver in `backend/lib`. If it's missing, the script will pause and ask you to download it first.
 
-## 5. Vercel Production Deployment (Serverless / No Railway Required)
-In production on Vercel, the application operates serverlessly using Next.js App Router API routes (`/api/...`) connecting directly to your hosted MySQL database (Railway MySQL, Aiven, PlanetScale, etc.):
+## 5. Vercel Production Deployment (Firebase Authentication + Cloud Firestore)
+In production on Vercel, the application operates serverlessly using the Firebase Web SDK (Firebase Authentication & Cloud Firestore):
 1. Import the repository into **Vercel**.
-2. Add the database connection variable in Vercel **Settings -> Environment Variables**:
-   - `MYSQL_URL`: `mysql://<user>:<password>@<host>:<port>/<database>` (or `DATABASE_URL`)
-3. Deploy! On first access, the Next.js API automatically creates all required tables (`users`, `spending_profile`, `budgets`, `expenses`) idempotently without needing manual SQL setup.
-4. The Core Java HTTP backend remains intact in `backend/` for local development and academic evaluation.
+2. Add your Firebase Web App configuration in Vercel **Settings -> Environment Variables**:
+   - `NEXT_PUBLIC_FIREBASE_API_KEY`
+   - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+   - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+   - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+   - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+   - `NEXT_PUBLIC_FIREBASE_APP_ID`
+3. Apply the security rules located in `firestore.rules` inside your Firebase Console (Firestore -> Rules).
+4. Deploy! Authentication and data persistence operate seamlessly via Firebase with full per-user data isolation.
+5. The academic Core Java + JDBC + MySQL backend remains completely intact in `backend/` for local evaluation.

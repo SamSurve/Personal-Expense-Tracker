@@ -8,27 +8,26 @@ import { CinematicIntro } from '@/components/CinematicIntro'
 import { ArrowRight, Activity, PieChart, Database, TrendingUp, ShieldCheck, Zap, Sparkles } from 'lucide-react'
 
 export default function LandingPage() {
-  const [hasEntered, setHasEntered] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('entered_experience') === 'true'
-    }
-    return false
-  })
+  const [hasEntered, setHasEntered] = useState<boolean>(false)
 
   useEffect(() => {
-    // Check if user already entered in current session
-    if (typeof window !== 'undefined') {
+    // Check if user already entered in current session AFTER initial matching render
+    try {
       const stored = sessionStorage.getItem('entered_experience')
       if (stored === 'true') {
         setHasEntered(true)
       }
+    } catch {
+      // Storage unavailable or disabled
     }
   }, [])
 
   const handleEnterExperience = () => {
     setHasEntered(true)
-    if (typeof window !== 'undefined') {
+    try {
       sessionStorage.setItem('entered_experience', 'true')
+    } catch {
+      // Storage unavailable or disabled
     }
   }
 

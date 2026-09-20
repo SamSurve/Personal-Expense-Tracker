@@ -324,15 +324,16 @@ export function computeWhatIfSimulation(
     }
   }
 
-  const catBaseline = budgetMap.get(categoryName) ?? 3000
-  const catSimulatedSpent = Number((catCurrentSpent + purchaseAmount).toFixed(2))
-  const categoryExceeded = catSimulatedSpent > catBaseline
+  const categoryBaseline = Number((budgetMap.get(categoryName) ?? 3000).toFixed(2))
+  const categoryCurrentSpent = Number(catCurrentSpent.toFixed(2))
+  const categorySimulatedSpent = Number((categoryCurrentSpent + purchaseAmount).toFixed(2))
+  const categoryExceeded = categorySimulatedSpent > categoryBaseline
 
   let narrative = `If you spend ₹${purchaseAmount} on ${categoryName}: `
   if (categoryExceeded) {
-    narrative += `It will push your ${categoryName} category budget over its baseline (₹${catSimulatedSpent} vs ₹${catBaseline} limit). `
+    narrative += `It will push your ${categoryName} category budget over its baseline (₹${categorySimulatedSpent} vs ₹${categoryBaseline} limit). `
   } else {
-    narrative += `Your ${categoryName} spending remains within baseline target (₹${catSimulatedSpent} / ₹${catBaseline}). `
+    narrative += `Your ${categoryName} spending remains within baseline target (₹${categorySimulatedSpent} / ₹${categoryBaseline}). `
   }
 
   if (healthScoreDelta < 0) {
@@ -361,8 +362,8 @@ export function computeWhatIfSimulation(
     healthScoreDelta,
     currentHealthLabel: currentSummary.spendingHealth.healthLabel,
     simulatedHealthLabel: simulatedSummary.spendingHealth.healthLabel,
-    categoryCurrentSpent: Number(catCurrentSpent.toFixed(2)),
-    categoryBaseline: Number(catBaseline.toFixed(2)),
+    categoryCurrentSpent,
+    categoryBaseline,
     categorySimulatedSpent,
     categoryExceeded,
     impactNarrative: narrative,

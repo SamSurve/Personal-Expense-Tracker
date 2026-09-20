@@ -19,6 +19,7 @@ import {
   UserProfileDTO,
   WhatIfSimulationDTO,
 } from '@/lib/api'
+import { computeWhatIfSimulation } from '@/lib/financialLogic'
 import {
   Activity,
   Plus,
@@ -60,6 +61,8 @@ import {
   HelpCircle,
   ChevronDown,
   ChevronUp,
+  PieChart,
+  Layers,
 } from 'lucide-react'
 
 // Category Icons Mapping
@@ -130,7 +133,7 @@ export default function DashboardPage() {
   const [timeframe, setTimeframe] = useState<'1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL'>('1M')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
-  const [greeting, setGreeting] = useState('Good day')
+  const [greeting, setGreeting] = useState('Welcome back')
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL')
@@ -138,26 +141,88 @@ export default function DashboardPage() {
   // Feature 2: Explainable Spending Health "Why?" drawer toggle
   const [showHealthWhy, setShowHealthWhy] = useState<boolean>(true)
 
-  // Feature 1: What-If Purchase Simulator State
-  const [whatIfAmount, setWhatIfAmount] = useState<string>('3000')
-  const [whatIfCategory, setWhatIfCategory] = useState<string>('Dining')
+  // Feature 1: What-If Purchase Simulator State (100% In-Memory, Read-Only)
+  const [whatIfAmount, setWhatIfAmount] = useState<string>('2000')
+  const [whatIfCategory, setWhatIfCategory] = useState<string>('Shopping & Retail')
   const [whatIfResult, setWhatIfResult] = useState<WhatIfSimulationDTO | null>(null)
   const [whatIfLoading, setWhatIfLoading] = useState<boolean>(false)
+  const [whatIfValidationMsg, setWhatIfValidationMsg] = useState<string | null>(null)
+  const [isCustomCategory, setIsCustomCategory] = useState<boolean>(false)
+  const [customCategoryName, setCustomCategoryName] = useState<string>('')
 
-  const handleRunSimulation = async () => {
-    const amt = parseFloat(whatIfAmount)
-    if (isNaN(amt) || amt <= 0) return
+  // Dynamically aggregated list of categories for What-If selector
+  const availableWhatIfCategories = useMemo(() => {
+    const set = new Set<string>()
+    transactions.forEach((t) => {
+      if (t.category && t.category.trim()) set.add(t.category.trim())
+    })
+    Object.keys(categoryBudgets).forEach((cat) => {
+      if (cat.trim()) set.add(cat.trim())
+    })
+    Object.keys(DEFAULT_CATEGORY_BENCHMARKS).forEach((cat) => {
+      set.add(cat)
+    })
+    return Array.from(set).sort()
+  }, [transactions, categoryBudgets])
+
+  const handleRunSimulation = () => {
+    setWhatIfValidationMsg(null)
+    const trimmed = whatIfAmount.trim()
+    if (!trimmed) {
+      setWhatIfValidationMsg('Enter a valid expense amount.')
+      return
+    }
+    const amt = parseFloat(trimmed)
+    if (isNaN(amt) || amt <= 0 || !isFinite(amt)) {
+      setWhatIfValidationMsg('Enter a valid expense amount.')
+      return
+    }
+    if (amt > 10000000) {
+      setWhatIfValidationMsg('Amount cannot exceed ₹1,00,00,000.')
+      return
+    }
+
+    const catName = isCustomCategory ? customCategoryName.trim() : whatIfCategory.trim()
+    if (!catName) {
+      setWhatIfValidationMsg('Please select or specify a category.')
+      return
+    }
+
     setWhatIfLoading(true)
     try {
-      const res = await apiSimulateWhatIf(userId, amt, whatIfCategory)
-      if (res) {
-        setWhatIfResult(res)
-      }
+      // In-memory computation using current logged-in user's real financial state
+      const currentExpensesList = transactions.map((t) => ({
+        category_name: t.category || 'General',
+        amount: Math.abs(t.amount),
+        expense_date: t.timestamp || new Date().toISOString().slice(0, 10),
+      }))
+
+      const budgetList = Object.entries(categoryBudgets).map(([cat, base]) => ({
+        category_name: cat,
+        baseline_amount: base,
+      }))
+
+      const res = computeWhatIfSimulation(
+        monthlyIncome,
+        savingsGoal,
+        currentExpensesList,
+        budgetList,
+        amt,
+        catName
+      )
+      setWhatIfResult(res)
     } catch (e) {
       console.error('Simulation error:', e)
+      setWhatIfValidationMsg('Failed to compute simulation.')
     } finally {
       setWhatIfLoading(false)
     }
+  }
+
+  const handleResetSimulation = () => {
+    setWhatIfResult(null)
+    setWhatIfValidationMsg(null)
+    setWhatIfAmount('')
   }
 
   // Settings Tab Editable Form State
@@ -250,11 +315,8 @@ export default function DashboardPage() {
         setSettingsName(storedName)
       }
 
-      // Dynamic Greeting
-      const hour = new Date().getHours()
-      if (hour < 12) setGreeting('Good morning')
-      else if (hour < 18) setGreeting('Good afternoon')
-      else setGreeting('Good evening')
+      // Static professional greeting
+      setGreeting('Welcome back')
 
       // Formatted Date
       const options: Intl.DateTimeFormatOptions = { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }
@@ -331,6 +393,199 @@ export default function DashboardPage() {
       return matchesSearch && matchesCategory
     })
   }, [transactions, searchQuery, categoryFilter])
+
+  // 3b. Category-wise Spending Breakdown (100% Real from transactions)
+  const categoryWiseSpending = useMemo(() => {
+    const map: Record<string, { total: number; count: number }> = {}
+    let overallTotal = 0
+
+    transactions.forEach((t) => {
+      const amt = Math.abs(t.amount)
+      if (amt > 0) {
+        const cat = (t.category || 'General').trim()
+        if (!map[cat]) {
+          map[cat] = { total: 0, count: 0 }
+        }
+        map[cat].total += amt
+        map[cat].count += 1
+        overallTotal += amt
+      }
+    })
+
+    return Object.entries(map)
+      .map(([category, data]) => {
+        const pct = overallTotal > 0 ? (data.total / overallTotal) * 100 : 0
+        return {
+          category,
+          amount: data.total,
+          count: data.count,
+          percentage: Math.round(pct * 10) / 10,
+        }
+      })
+      .sort((a, b) => b.amount - a.amount)
+  }, [transactions])
+
+  // 3c. Rule-Based Dynamic Financial Insights (100% Derived from Real Data)
+  const financialInsightsList = useMemo(() => {
+    const items: Array<{
+      id: string
+      type: 'warning' | 'success' | 'info'
+      title: string
+      message: string
+      icon: React.ReactNode
+    }> = []
+
+    if (transactions.length === 0) {
+      items.push({
+        id: 'no-data',
+        type: 'info',
+        title: 'Awaiting Transactions',
+        message: 'Record your first expenses to start generating personalized financial insights and pacing observations.',
+        icon: <Info className="w-4 h-4 text-cyan-400" />,
+      })
+      return items
+    }
+
+    // 1. Weekend vs Weekday Spending Analysis
+    let weekendTotal = 0
+    let weekdayTotal = 0
+    const weekendDays = new Set<string>()
+    const weekdayDays = new Set<string>()
+
+    transactions.forEach((t) => {
+      const amt = Math.abs(t.amount)
+      const d = new Date(t.timestamp)
+      const dateStr = t.timestamp.slice(0, 10)
+      const day = d.getDay() // 0 = Sunday, 6 = Saturday
+      if (day === 0 || day === 6) {
+        weekendTotal += amt
+        weekendDays.add(dateStr)
+      } else {
+        weekdayTotal += amt
+        weekdayDays.add(dateStr)
+      }
+    })
+
+    const weekendCount = Math.max(1, weekendDays.size)
+    const weekdayCount = Math.max(1, weekdayDays.size)
+    const weekendDailyAvg = weekendTotal / weekendCount
+    const weekdayDailyAvg = weekdayTotal / weekdayCount
+
+    if (weekendTotal > 0 && weekendDailyAvg > weekdayDailyAvg * 1.25) {
+      items.push({
+        id: 'weekend-trend',
+        type: 'warning',
+        title: 'Weekend Spending Trend',
+        message: `Your weekend spending is higher than your weekday spending (averaging ₹${Math.round(weekendDailyAvg).toLocaleString('en-IN')}/day on weekends vs ₹${Math.round(weekdayDailyAvg).toLocaleString('en-IN')}/day on weekdays).`,
+        icon: <Calendar className="w-4 h-4 text-amber-400" />,
+      })
+    } else if (weekdayTotal > 0 && weekdayDailyAvg > weekendDailyAvg * 1.5 && weekendTotal > 0) {
+      items.push({
+        id: 'weekday-trend',
+        type: 'info',
+        title: 'Weekday Concentrated Spending',
+        message: `The majority of your expenses occur during workdays (averaging ₹${Math.round(weekdayDailyAvg).toLocaleString('en-IN')}/day), with disciplined weekend spending.`,
+        icon: <Calendar className="w-4 h-4 text-cyan-400" />,
+      })
+    }
+
+    // 2. Category Above Baseline
+    const overBaselineCat = categorySpendList.find((c) => c.isOver)
+    if (overBaselineCat) {
+      const excess = overBaselineCat.difference
+      items.push({
+        id: 'category-baseline-alert',
+        type: 'warning',
+        title: 'Category Spending Above Baseline',
+        message: `Your ${overBaselineCat.category} spending (₹${overBaselineCat.actual.toLocaleString('en-IN')}) is ₹${excess.toLocaleString('en-IN')} above your planned baseline of ₹${overBaselineCat.baseline.toLocaleString('en-IN')}.`,
+        icon: <AlertTriangle className="w-4 h-4 text-amber-400" />,
+      })
+    } else if (categorySpendList.length > 0) {
+      items.push({
+        id: 'category-baseline-ok',
+        type: 'success',
+        title: 'Budget Discipline',
+        message: 'All active spending categories are currently within your planned baselines.',
+        icon: <CheckCircle2 className="w-4 h-4 text-emerald-400" />,
+      })
+    }
+
+    // 3. Savings Target Progress
+    if (savingsGoal > 0) {
+      if (remainingBalance >= savingsGoal) {
+        items.push({
+          id: 'savings-on-track',
+          type: 'success',
+          title: 'Savings Target On Track',
+          message: `You are currently on track with your monthly savings target of ₹${savingsGoal.toLocaleString('en-IN')}.`,
+          icon: <Target className="w-4 h-4 text-emerald-400" />,
+        })
+      } else if (remainingBalance > 0) {
+        const gap = savingsGoal - remainingBalance
+        items.push({
+          id: 'savings-gap',
+          type: 'info',
+          title: 'Savings Opportunity',
+          message: `You have a ₹${Math.round(gap).toLocaleString('en-IN')} gap to reach your planned savings target of ₹${savingsGoal.toLocaleString('en-IN')} for this billing cycle.`,
+          icon: <Sparkles className="w-4 h-4 text-cyan-400" />,
+        })
+      } else {
+        items.push({
+          id: 'savings-deficit',
+          type: 'warning',
+          title: 'Deficit Alert',
+          message: 'Total spending has exceeded your configured income baseline, impacting monthly savings.',
+          icon: <AlertTriangle className="w-4 h-4 text-red-400" />,
+        })
+      }
+    }
+
+    // 4. High Spending Category Driver
+    if (categoryWiseSpending.length > 0) {
+      const topCat = categoryWiseSpending[0]
+      if (topCat.percentage >= 35) {
+        items.push({
+          id: 'top-category',
+          type: 'info',
+          title: 'High Spending Category',
+          message: `${topCat.category} is your largest expense driver, accounting for ${topCat.percentage}% of your total spending (₹${topCat.amount.toLocaleString('en-IN')}).`,
+          icon: <TrendingUp className="w-4 h-4 text-cyan-400" />,
+        })
+      }
+    }
+
+    // 5. Spending Pace Observation
+    if (summaryData?.spendingPace) {
+      const pace = summaryData.spendingPace
+      if (pace.paceStatus === 'ON TRACK') {
+        items.push({
+          id: 'pace-on-track',
+          type: 'success',
+          title: 'Pacing On Track',
+          message: `Your current burn rate of ₹${pace.dailyAverage}/day is healthy, preserving ₹${pace.safeToSpend.toLocaleString('en-IN')} in safe spend cushion.`,
+          icon: <CheckCircle2 className="w-4 h-4 text-emerald-400" />,
+        })
+      } else if (pace.paceStatus === 'ABOVE PACE') {
+        items.push({
+          id: 'pace-above',
+          type: 'warning',
+          title: 'Accelerated Burn Rate',
+          message: `Your projected month-end spend of ₹${pace.projectedMonthSpend.toLocaleString('en-IN')} is trending above your discretionary capacity.`,
+          icon: <AlertTriangle className="w-4 h-4 text-amber-400" />,
+        })
+      } else {
+        items.push({
+          id: 'pace-under',
+          type: 'info',
+          title: 'Conservative Spending Pace',
+          message: `You have ₹${pace.safeToSpend.toLocaleString('en-IN')} in remaining safe cushion with a daily allowance of ₹${pace.dailySafeSpend}/day.`,
+          icon: <Lightbulb className="w-4 h-4 text-cyan-400" />,
+        })
+      }
+    }
+
+    return items
+  }, [transactions, categorySpendList, savingsGoal, remainingBalance, categoryWiseSpending, summaryData])
 
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -524,28 +779,28 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] font-sans flex transition-colors duration-200">
-      {/* 1. Dark Sidebar Navigation */}
-      <aside className="w-64 border-r border-[var(--border)] bg-[#090b0e] flex flex-col justify-between hidden lg:flex shrink-0">
+      {/* 1. Dark Sidebar Navigation - Polished Deep Navy / Charcoal */}
+      <aside className="w-64 border-r border-[#1e293b] bg-[#0d141f] flex flex-col justify-between hidden lg:flex shrink-0">
         <div>
           {/* Logo Header */}
-          <div className="p-6 border-b border-[var(--border)]">
+          <div className="p-6 border-b border-[#1e293b]">
             <Link href="/" className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded bg-[var(--accent)] text-black font-bold flex items-center justify-center font-mono text-xs">
+              <div className="w-7 h-7 rounded bg-[var(--accent)] text-black font-bold flex items-center justify-center font-mono text-xs shadow-sm">
                 ET
               </div>
               <div>
-                <span className="font-bold text-sm tracking-wider uppercase block">LEDGER / PERSONAL</span>
+                <span className="font-bold text-sm tracking-wider uppercase block text-slate-100">LEDGER / PERSONAL</span>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
-                  <span className="text-[10px] font-mono text-[var(--accent)] font-semibold uppercase">LIVE</span>
-                  <span className="text-[10px] font-mono text-[var(--text-muted)]">• MySQL Port 3306</span>
+                  <span className="text-[11px] font-mono text-[var(--accent)] font-semibold uppercase">LIVE</span>
+                  <span className="text-[11px] font-mono text-slate-400">• Cloud Firestore</span>
                 </div>
               </div>
             </Link>
           </div>
 
           {/* Navigation Tabs */}
-          <nav className="p-4 space-y-1 text-xs font-medium font-sans">
+          <nav className="p-4 space-y-1.5 text-xs font-medium font-sans">
             {[
               { id: 'Overview', label: 'Overview', icon: LayoutDashboard },
               { id: 'Transactions', label: 'Transactions', icon: Receipt },
@@ -563,11 +818,11 @@ export default function DashboardPage() {
                   onClick={() => setActiveTab(item.id as any)}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg transition-all ${
                     isActive
-                      ? 'bg-[#161b22] text-[var(--text)] font-semibold border-l-2 border-[var(--accent)]'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[#12161d]'
+                      ? 'bg-[#1a2536] text-white font-semibold border-l-2 border-[var(--accent)] shadow-sm'
+                      : 'text-slate-300 hover:text-white hover:bg-[#141e2e]'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`} />
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-[var(--accent)]' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
                 </button>
               )
@@ -576,17 +831,17 @@ export default function DashboardPage() {
         </div>
 
         {/* Database & Architecture Telemetry Card */}
-        <div className="p-4 m-4 rounded-xl border border-[var(--border)] bg-[#12161d] space-y-2.5 text-xs">
+        <div className="p-4 m-4 rounded-xl border border-[#1e2e42] bg-[#121c29] space-y-2.5 text-xs">
           <div className="flex items-center gap-2 text-[var(--accent)] font-mono text-[11px] font-semibold">
             <Database className="w-3.5 h-3.5" />
-            <span>DIRECT JDBC PERSISTENCE</span>
+            <span>CLOUD FIRESTORE PERSISTENCE</span>
           </div>
-          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-            Core Java HTTP server on port 8080 connected to MySQL schema <span className="font-mono text-[var(--text)]">expense_tracker_db</span>.
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Direct serverless database with per-user document isolation and subcollections.
           </p>
-          <div className="pt-1 flex items-center gap-2 font-mono text-[10px] text-[var(--text-muted)]">
+          <div className="pt-1 flex items-center gap-2 font-mono text-[11px] text-slate-400 font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span>Zero mock / fallback layer</span>
+            <span>Zero mock / live synchronized</span>
           </div>
         </div>
       </aside>
@@ -661,14 +916,14 @@ export default function DashboardPage() {
           {/* Greeting Header & 3 Summary Cards (NO NET WORTH CARD) */}
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
             <div>
-              <span className="text-xs font-mono text-[var(--text-muted)] uppercase tracking-wider block mb-1">
+              <span className="text-[11px] font-mono text-[var(--text-muted)] uppercase tracking-wider block mb-1 font-medium">
                 YOUR FINANCIAL OVERVIEW
               </span>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-                {greeting}, <span className="text-[var(--text)]">{userName.split(' ')[0] || 'User'}</span>.
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text)]">
+                Welcome back, <span className="text-[var(--text)]">{userName.split(' ')[0] || 'User'}</span>.
               </h1>
-              <p className="text-xs text-[var(--text-muted)] mt-1 font-light flex items-center gap-2">
-                All metrics below are computed strictly from your recorded MySQL transactions.
+              <p className="text-xs sm:text-[13px] text-[var(--text-muted)] mt-1 flex items-center gap-2">
+                Here’s your financial overview based on your recorded transactions.
               </p>
             </div>
 
@@ -676,21 +931,21 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
               {/* Card 1: Monthly Income */}
               <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--panel)]">
-                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-1">
+                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] font-medium mb-1">
                   <span>Monthly income</span>
                   <Wallet className="w-4 h-4 text-[var(--accent)]" />
                 </div>
                 <div className="text-xl font-bold font-mono tracking-tight text-[var(--text)]">
                   ₹{monthlyIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
-                <span className="text-[10px] font-mono text-[var(--text-muted)] flex items-center gap-1 mt-1">
+                <span className="text-[11px] font-mono text-[var(--text-muted)] flex items-center gap-1 mt-1">
                   <CheckCircle2 className="w-3 h-3 text-[var(--accent)]" /> Configured baseline
                 </span>
               </div>
 
               {/* Card 2: Total Spent (Monthly Spending) */}
               <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--panel)]">
-                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-1">
+                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] font-medium mb-1">
                   <span>Total spent</span>
                   <CreditCard className="w-4 h-4 text-[var(--danger)]" />
                 </div>
@@ -698,7 +953,7 @@ export default function DashboardPage() {
                   ₹{totalSpent.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
                 <div className="mt-2 space-y-1">
-                  <div className="flex justify-between text-[10px] font-mono text-[var(--text-muted)]">
+                  <div className="flex justify-between text-[11px] font-mono text-[var(--text-muted)]">
                     <span>{spendingPctUsed}% of income</span>
                     <span>{transactions.length} record{transactions.length === 1 ? '' : 's'}</span>
                   </div>
@@ -710,21 +965,21 @@ export default function DashboardPage() {
 
               {/* Card 3: Remaining Balance */}
               <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--panel)]">
-                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-1">
+                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] font-medium mb-1">
                   <span>Remaining balance</span>
                   <TrendingUp className="w-4 h-4 text-[var(--accent)]" />
                 </div>
                 <div className={`text-xl font-bold font-mono tracking-tight ${remainingBalance < 0 ? 'text-[var(--danger)]' : 'text-[var(--accent)]'}`}>
                   ₹{remainingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
-                <span className="text-[10px] font-mono text-[var(--text-muted)] flex items-center gap-1 mt-1">
+                <span className="text-[11px] font-mono text-[var(--text-muted)] flex items-center gap-1 mt-1">
                   Target: ₹{savingsGoal.toLocaleString('en-IN')} savings ({savingsProgressPct}%)
                 </span>
               </div>
 
               {/* Card 4: Daily Safe Spend Allowance */}
               <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--panel)]">
-                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-1">
+                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] font-medium mb-1">
                   <span>Daily Safe Spend</span>
                   <Gauge className="w-4 h-4 text-emerald-400" />
                 </div>
@@ -734,7 +989,7 @@ export default function DashboardPage() {
                   ₹{(summaryData?.spendingPace?.dailySafeSpend ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   <span className="text-xs font-normal text-[var(--text-muted)] ml-1">/ day</span>
                 </div>
-                <span className="text-[10px] font-mono text-[var(--text-muted)] flex items-center gap-1 mt-1">
+                <span className="text-[11px] font-mono text-[var(--text-muted)] flex items-center gap-1 mt-1">
                   {(summaryData?.spendingPace?.dailySafeSpend ?? 0) <= 0
                     ? '⚠️ Capacity limit reached'
                     : `Across ${summaryData?.spendingPace?.daysRemaining ?? 1} days left in month`}
@@ -749,15 +1004,15 @@ export default function DashboardPage() {
           {activeTab === 'Overview' && (
             <div className="space-y-8">
               {/* 2-Column Main Layout Grid */}
-              <div className="grid lg:grid-cols-3 gap-8">
+              <div className="grid lg:grid-cols-3 gap-8 items-start">
                 {/* Left Main Column (2/3 width) */}
                 <div className="lg:col-span-2 space-y-8">
                   {/* Balance Timeline Chart Card */}
                   <section className="p-6 rounded-xl border border-[var(--border)] bg-[var(--panel)]">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                       <div>
-                        <h3 className="text-base font-bold tracking-tight">Balance timeline</h3>
-                        <p className="text-xs text-[var(--text-muted)] font-light">
+                        <h3 className="text-base font-bold tracking-tight text-[var(--text)]">Balance timeline</h3>
+                        <p className="text-xs text-[var(--text-muted)]">
                           Dynamic liquid balance trajectory filtered by <span className="font-mono text-[var(--accent)] font-semibold">{timeframe}</span>.
                         </p>
                       </div>
@@ -813,7 +1068,7 @@ export default function DashboardPage() {
                               />
                             ))}
                           </svg>
-                          <div className="flex justify-between text-[10px] font-mono text-[var(--text-muted)] border-t border-[var(--border)] pt-2 mt-2">
+                          <div className="flex justify-between text-[11px] font-mono text-[var(--text-muted)] border-t border-[var(--border)] pt-2 mt-2">
                             <span>{timelinePoints[0]?.date || 'Start'}</span>
                             <span>{timelinePoints[Math.floor(timelinePoints.length / 2)]?.date || 'Mid'}</span>
                             <span className="text-[var(--accent)] font-semibold">
@@ -837,8 +1092,8 @@ export default function DashboardPage() {
                   <section className="p-6 rounded-xl border border-[var(--border)] bg-[var(--panel)] space-y-5">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div>
-                        <h3 className="text-base font-bold tracking-tight">Recent transactions</h3>
-                        <p className="text-xs text-[var(--text-muted)] font-light">
+                        <h3 className="text-base font-bold tracking-tight text-[var(--text)]">Recent transactions</h3>
+                        <p className="text-xs text-[var(--text-muted)]">
                           Real expenses queried directly from MySQL.
                         </p>
                       </div>
@@ -846,7 +1101,7 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           onClick={() => setActiveTab('Transactions')}
-                          className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-xs font-mono text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+                          className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-xs font-mono text-[var(--text-muted)] hover:text-[var(--text)] transition-colors font-medium"
                         >
                           View all ({transactions.length})
                         </button>
@@ -875,7 +1130,7 @@ export default function DashboardPage() {
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                           <thead>
-                            <tr className="border-b border-[var(--border)] text-[11px] font-mono text-[var(--text-muted)] uppercase">
+                            <tr className="border-b border-[var(--border)] text-[11px] font-mono text-[var(--text-muted)] uppercase font-medium">
                               <th className="py-3 px-4">Merchant / Title</th>
                               <th className="py-3 px-4">Category</th>
                               <th className="py-3 px-4">Date</th>
@@ -896,11 +1151,11 @@ export default function DashboardPage() {
                                     </div>
                                     <div>
                                       <span className="block font-medium">{tx.merchant}</span>
-                                      {tx.notes && <span className="text-[10px] text-[var(--text-muted)] block font-light">{tx.notes}</span>}
+                                      {tx.notes && <span className="text-[11px] text-[var(--text-muted)] block">{tx.notes}</span>}
                                     </div>
                                   </td>
                                   <td className="py-3.5 px-4">
-                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono border ${badgeStyle}`}>
+                                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-medium border ${badgeStyle}`}>
                                       {tx.category}
                                     </span>
                                   </td>
@@ -941,6 +1196,125 @@ export default function DashboardPage() {
                       </div>
                     )}
                   </section>
+
+                  {/* Category-wise Spending Section */}
+                  <section className="p-6 rounded-xl border border-[var(--border)] bg-[var(--panel)] space-y-5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--accent)]">
+                          <PieChart className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold tracking-tight text-[var(--text)]">Category-wise Spending</h3>
+                          <p className="text-xs text-[var(--text-muted)]">
+                            Distribution across your recorded expenses
+                          </p>
+                        </div>
+                      </div>
+                      {totalSpent > 0 && (
+                        <span className="text-xs font-mono font-semibold text-[var(--accent)] px-2.5 py-1 rounded-full bg-[var(--accent-bg)] border border-[var(--accent-border)]">
+                          ₹{totalSpent.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Total
+                        </span>
+                      )}
+                    </div>
+
+                    {categoryWiseSpending.length === 0 ? (
+                      <div className="p-8 text-center border border-dashed border-[var(--border)] rounded-xl bg-[var(--bg)]/30 space-y-2">
+                        <ShoppingBag className="w-8 h-8 text-[var(--text-muted)] mx-auto opacity-50" />
+                        <h4 className="text-xs font-bold text-[var(--text)]">No category spending recorded yet</h4>
+                        <p className="text-[11px] text-[var(--text-muted)] max-w-sm mx-auto">
+                          Add an expense with a category to see your live category distribution breakdown.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {categoryWiseSpending.map((item) => {
+                          const icon = CATEGORY_ICONS[item.category] || <Receipt className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+
+                          return (
+                            <div key={item.category} className="space-y-2">
+                              <div className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="p-1.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] shrink-0">
+                                    {icon}
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold text-[var(--text)] block">{item.category}</span>
+                                    <span className="text-[11px] text-[var(--text-muted)] font-mono">
+                                      {item.count} {item.count === 1 ? 'transaction' : 'transactions'}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right font-mono">
+                                  <span className="font-bold text-[var(--text)] block">
+                                    ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  </span>
+                                  <span className="text-[11px] text-[var(--accent)] font-semibold">
+                                    {item.percentage}%
+                                  </span>
+                                </div>
+                              </div>
+                              {/* Horizontal distribution bar */}
+                              <div className="h-2 w-full bg-[var(--bg)] rounded-full overflow-hidden border border-[var(--border)]">
+                                <div
+                                  className="h-full bg-[var(--accent)] rounded-full transition-all duration-500"
+                                  style={{ width: `${Math.min(100, Math.max(2, item.percentage))}%` }}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* Financial Insights Section */}
+                  <section className="p-6 rounded-xl border border-[var(--border)] bg-[var(--panel)] space-y-5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--accent)]">
+                          <Sparkles className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold tracking-tight text-[var(--text)]">Financial Insights</h3>
+                          <p className="text-xs text-[var(--text-muted)]">
+                            Data-driven intelligence from your real spending habits
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent-border)] font-semibold">
+                        Deterministic Rules
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {financialInsightsList.map((insight) => {
+                        const borderColor =
+                          insight.type === 'warning'
+                            ? 'border-amber-500/20 bg-amber-500/5'
+                            : insight.type === 'success'
+                            ? 'border-emerald-500/20 bg-emerald-500/5'
+                            : 'border-[var(--border)] bg-[var(--bg)]/60'
+
+                        return (
+                          <div
+                            key={insight.id}
+                            className={`p-4 rounded-xl border flex items-start gap-3 transition-colors ${borderColor}`}
+                          >
+                            <div className="p-1.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] shrink-0 mt-0.5">
+                              {insight.icon}
+                            </div>
+                            <div className="space-y-0.5 flex-1 min-w-0">
+                              <h4 className="text-xs font-bold text-[var(--text)]">{insight.title}</h4>
+                              <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                                {insight.message}
+                              </p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
                 </div>
 
                 {/* Right Main Column (1/3 width) */}
@@ -950,10 +1324,10 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Compass className="w-4 h-4 text-[var(--accent)]" />
-                        <h3 className="text-base font-bold tracking-tight">Spending pace</h3>
+                        <h3 className="text-base font-bold tracking-tight text-[var(--text)]">Spending pace</h3>
                       </div>
                       {summaryData?.spendingPace && (
-                        <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                        <span className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-bold border ${
                           summaryData.spendingPace.paceStatus === 'ON TRACK'
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                             : summaryData.spendingPace.paceStatus === 'ABOVE PACE'
@@ -969,41 +1343,41 @@ export default function DashboardPage() {
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3 pt-1">
                           <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)]">
-                            <span className="text-[10px] font-mono text-[var(--text-muted)] block">Spent So Far</span>
+                            <span className="text-[11px] font-mono text-[var(--text-muted)] block font-medium">Spent So Far</span>
                             <span className="text-sm font-bold font-mono text-[var(--text)]">
                               ₹{summaryData.spendingPace.actualSpentMonth.toLocaleString('en-IN')}
                             </span>
-                            <span className="text-[9px] text-[var(--text-muted)] block mt-0.5">
+                            <span className="text-[10px] text-[var(--text-muted)] block mt-0.5">
                               Day {summaryData.spendingPace.daysElapsed} of {summaryData.spendingPace.daysInMonth}
                             </span>
                           </div>
 
                           <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)]">
-                            <span className="text-[10px] font-mono text-[var(--text-muted)] block">Ideal Pace Today</span>
+                            <span className="text-[11px] font-mono text-[var(--text-muted)] block font-medium">Ideal Pace Today</span>
                             <span className="text-sm font-bold font-mono text-[var(--accent)]">
                               ₹{summaryData.spendingPace.idealPaceToday.toLocaleString('en-IN')}
                             </span>
-                            <span className="text-[9px] text-[var(--text-muted)] block mt-0.5">Target capacity</span>
+                            <span className="text-[10px] text-[var(--text-muted)] block mt-0.5">Target capacity</span>
                           </div>
 
                           <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)]">
-                            <span className="text-[10px] font-mono text-[var(--text-muted)] block">Projected Month-End</span>
+                            <span className="text-[11px] font-mono text-[var(--text-muted)] block font-medium">Projected Month-End</span>
                             <span className="text-sm font-bold font-mono text-[var(--text)]">
                               ₹{summaryData.spendingPace.projectedMonthSpend.toLocaleString('en-IN')}
                             </span>
-                            <span className="text-[9px] text-[var(--text-muted)] block mt-0.5">Based on daily burn</span>
+                            <span className="text-[10px] text-[var(--text-muted)] block mt-0.5">Based on daily burn</span>
                           </div>
 
                           <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)]">
-                            <span className="text-[10px] font-mono text-[var(--text-muted)] block">Safe to Spend</span>
+                            <span className="text-[11px] font-mono text-[var(--text-muted)] block font-medium">Safe to Spend</span>
                             <span className="text-sm font-bold font-mono text-emerald-400">
                               ₹{summaryData.spendingPace.safeToSpend.toLocaleString('en-IN')}
                             </span>
-                            <span className="text-[9px] text-[var(--text-muted)] block mt-0.5">Remaining cushion</span>
+                            <span className="text-[10px] text-[var(--text-muted)] block mt-0.5">Remaining cushion</span>
                           </div>
                         </div>
 
-                        <p className="text-[11px] text-[var(--text-muted)] font-light leading-relaxed bg-[var(--bg)]/60 p-3 rounded-lg border border-[var(--border)]">
+                        <p className="text-xs text-[var(--text-muted)] leading-relaxed bg-[var(--bg)]/60 p-3 rounded-lg border border-[var(--border)]">
                           {summaryData.spendingPace.explanation}
                         </p>
                       </div>
@@ -1017,10 +1391,10 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Gauge className="w-4 h-4 text-[var(--accent)]" />
-                        <h3 className="text-base font-bold tracking-tight">Spending health</h3>
+                        <h3 className="text-base font-bold tracking-tight text-[var(--text)]">Spending health</h3>
                       </div>
                       {summaryData?.spendingHealth && (
-                        <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent-border)]">
+                        <span className="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent-border)]">
                           {summaryData.spendingHealth.healthLabel}
                         </span>
                       )}
@@ -1058,7 +1432,7 @@ export default function DashboardPage() {
                           {showHealthWhy && (
                             <div className="px-3 pb-3 space-y-1.5 border-t border-[var(--border)]/50 pt-2">
                               {summaryData.spendingHealth.reasons.map((reason, idx) => (
-                                <div key={idx} className="flex items-start gap-2 text-[11px] text-[var(--text-muted)] font-light leading-relaxed">
+                                <div key={idx} className="flex items-start gap-2 text-xs text-[var(--text-muted)] leading-relaxed">
                                   <span className="text-[var(--accent)] font-mono text-xs">•</span>
                                   <span>{reason}</span>
                                 </div>
@@ -1072,122 +1446,11 @@ export default function DashboardPage() {
                     )}
                   </section>
 
-                  {/* FEATURE 3 — What-If Purchase Simulator Card (Read-Only) */}
-                  <section className="p-6 rounded-xl border border-[var(--border)] bg-[var(--panel)] space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Sliders className="w-4 h-4 text-[var(--accent)]" />
-                        <h3 className="text-base font-bold tracking-tight">What-if simulator</h3>
-                      </div>
-                      <span className="px-2 py-0.5 rounded text-[9px] font-mono uppercase font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        Read-only • No DB mutation
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-[var(--text-muted)] font-light leading-relaxed">
-                      Test hypothetical purchases before spending to see how they impact your safe cushion, daily allowance, and health score.
-                    </p>
-
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-mono text-[var(--text-muted)] block mb-1">Amount (₹)</label>
-                          <input
-                            type="number"
-                            value={whatIfAmount}
-                            onChange={(e) => setWhatIfAmount(e.target.value)}
-                            placeholder="2500"
-                            className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--text)] font-mono focus:outline-none focus:border-[var(--accent)] transition-colors"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-mono text-[var(--text-muted)] block mb-1">Category</label>
-                          <select
-                            value={whatIfCategory}
-                            onChange={(e) => setWhatIfCategory(e.target.value)}
-                            className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--text)] font-mono focus:outline-none focus:border-[var(--accent)] transition-colors"
-                          >
-                            {Object.keys(DEFAULT_CATEGORY_BENCHMARKS).map((cat) => (
-                              <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleRunSimulation}
-                        disabled={whatIfLoading || !whatIfAmount}
-                        className="w-full bg-[var(--accent)] text-black font-semibold text-xs py-2 rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
-                      >
-                        {whatIfLoading ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Sparkles className="w-3.5 h-3.5" />
-                        )}
-                        <span>Simulate purchase impact</span>
-                      </button>
-
-                      {whatIfResult && (
-                        <div className="mt-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--bg)]/70 space-y-3">
-                          <div className="flex items-center justify-between border-b border-[var(--border)]/60 pb-2">
-                            <span className="text-xs font-bold text-[var(--text)]">Simulation Impact</span>
-                            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
-                              whatIfResult.healthScoreDelta < 0
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                            }`}>
-                              Health {whatIfResult.healthScoreDelta >= 0 ? '+' : ''}{whatIfResult.healthScoreDelta} pts
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                            <div className="p-2 rounded bg-[var(--panel)] border border-[var(--border)]">
-                              <span className="text-[9px] text-[var(--text-muted)] block">Safe Cushion</span>
-                              <div className="flex items-baseline gap-1 mt-0.5">
-                                <span className="line-through text-[var(--text-muted)] text-[10px]">₹{whatIfResult.currentSafeToSpend}</span>
-                                <span className="font-bold text-[var(--text)]">₹{whatIfResult.simulatedSafeToSpend}</span>
-                              </div>
-                            </div>
-
-                            <div className="p-2 rounded bg-[var(--panel)] border border-[var(--border)]">
-                              <span className="text-[9px] text-[var(--text-muted)] block">Daily Allowance</span>
-                              <div className="flex items-baseline gap-1 mt-0.5">
-                                <span className="line-through text-[var(--text-muted)] text-[10px]">₹{whatIfResult.currentDailySafeSpend}/d</span>
-                                <span className="font-bold text-emerald-400">₹{whatIfResult.simulatedDailySafeSpend}/d</span>
-                              </div>
-                            </div>
-
-                            <div className="p-2 rounded bg-[var(--panel)] border border-[var(--border)]">
-                              <span className="text-[9px] text-[var(--text-muted)] block">Health Score</span>
-                              <div className="flex items-baseline gap-1 mt-0.5">
-                                <span className="line-through text-[var(--text-muted)] text-[10px]">{whatIfResult.currentHealthScore}</span>
-                                <span className="font-bold text-[var(--accent)]">{whatIfResult.simulatedHealthScore}/100</span>
-                              </div>
-                            </div>
-
-                            <div className="p-2 rounded bg-[var(--panel)] border border-[var(--border)]">
-                              <span className="text-[9px] text-[var(--text-muted)] block">Pace Status</span>
-                              <span className="font-bold text-[var(--text)] text-[10px] uppercase mt-0.5 block">
-                                {whatIfResult.simulatedPaceStatus}
-                              </span>
-                            </div>
-                          </div>
-
-                          <p className="text-[11px] text-[var(--text-muted)] font-light leading-relaxed border-t border-[var(--border)]/60 pt-2">
-                            {whatIfResult.impactNarrative}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </section>
-
                   {/* Spending by Category Card */}
                   <section className="p-6 rounded-xl border border-[var(--border)] bg-[var(--panel)] space-y-4">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-base font-bold tracking-tight">Spending by category</h3>
-                      <span className="text-xs font-mono text-[var(--text-muted)]">Actual vs Baseline</span>
+                      <h3 className="text-base font-bold tracking-tight text-[var(--text)]">Spending by category</h3>
+                      <span className="text-xs font-mono text-[var(--text-muted)] font-medium">Actual vs Baseline</span>
                     </div>
 
                     {categorySpendList.length === 0 ? (
@@ -1201,13 +1464,13 @@ export default function DashboardPage() {
                                 <div className="p-1 rounded bg-[var(--bg)] border border-[var(--border)]">
                                   {CATEGORY_ICONS[item.category] || <Receipt className="w-3 h-3" />}
                                 </div>
-                                <span className="font-medium">{item.category}</span>
+                                <span className="font-semibold text-xs text-[var(--text)]">{item.category}</span>
                               </div>
                               <div className="font-mono text-right text-xs">
                                 <span className={`font-semibold ${item.isOver ? 'text-[var(--danger)]' : 'text-[var(--text)]'}`}>
                                   ₹{item.actual.toLocaleString('en-IN')}
                                 </span>
-                                <span className="text-[var(--text-muted)] text-[10px] ml-1.5">/ ₹{item.baseline.toLocaleString('en-IN')}</span>
+                                <span className="text-[var(--text-muted)] text-[11px] ml-1.5">/ ₹{item.baseline.toLocaleString('en-IN')}</span>
                               </div>
                             </div>
                             <div className="h-1.5 w-full bg-[var(--bg)] rounded-full overflow-hidden border border-[var(--border)]">
@@ -1222,44 +1485,240 @@ export default function DashboardPage() {
                     )}
                   </section>
 
-                  {/* Financial Insights Card (Rule-Based Intelligence from Java Backend) */}
+                  {/* FEATURE 3 — What-If Purchase Simulator Card (100% In-Memory, Read-Only) */}
                   <section className="p-6 rounded-xl border border-[var(--border)] bg-[var(--panel)] space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-[var(--accent)]" />
-                      <h3 className="text-base font-bold tracking-tight">Financial insights</h3>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sliders className="w-4 h-4 text-[var(--accent)]" />
+                        <h3 className="text-base font-bold tracking-tight text-[var(--text)]">What-if simulator</h3>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-mono uppercase font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        Read-only • No DB mutation
+                      </span>
                     </div>
 
+                    <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                      Simulate hypothetical purchases before spending to see their immediate impact on your safe cushion, daily allowance, pacing, and health score.
+                    </p>
+
                     <div className="space-y-3">
-                      {(summaryData?.insights && summaryData.insights.length > 0) ? (
-                        summaryData.insights.map((ins, idx) => (
-                          <div
-                            key={idx}
-                            className={`p-4 rounded-xl border flex items-start gap-3 ${
-                              ins.type === 'warning'
-                                ? 'border-amber-500/20 bg-amber-500/5'
-                                : 'border-[var(--accent-border)] bg-[var(--accent-bg)]'
-                            }`}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[11px] font-mono text-[var(--text-muted)] block mb-1 font-medium">Amount (₹)</label>
+                          <input
+                            type="number"
+                            value={whatIfAmount}
+                            onChange={(e) => {
+                              setWhatIfAmount(e.target.value)
+                              if (whatIfValidationMsg) setWhatIfValidationMsg(null)
+                            }}
+                            placeholder="e.g. 2000"
+                            className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--text)] font-mono focus:outline-none focus:border-[var(--accent)] transition-colors"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-mono text-[var(--text-muted)] block mb-1 font-medium">Category</label>
+                          <select
+                            value={isCustomCategory ? '__CUSTOM__' : whatIfCategory}
+                            onChange={(e) => {
+                              if (e.target.value === '__CUSTOM__') {
+                                setIsCustomCategory(true)
+                              } else {
+                                setIsCustomCategory(false)
+                                setWhatIfCategory(e.target.value)
+                              }
+                              if (whatIfValidationMsg) setWhatIfValidationMsg(null)
+                            }}
+                            className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--text)] font-mono focus:outline-none focus:border-[var(--accent)] transition-colors"
                           >
-                            <div className="p-1.5 rounded-md bg-[var(--bg)] border border-[var(--border)] text-[var(--accent)] shrink-0">
-                              {ins.type === 'warning' ? <AlertTriangle className="w-4 h-4 text-amber-400" /> : <Lightbulb className="w-4 h-4 text-[var(--accent)]" />}
-                            </div>
+                            {availableWhatIfCategories.map((cat) => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                            <option value="__CUSTOM__">+ New Category</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {isCustomCategory && (
+                        <div>
+                          <label className="text-[11px] font-mono text-[var(--text-muted)] block mb-1 font-medium">Custom Category Name</label>
+                          <input
+                            type="text"
+                            value={customCategoryName}
+                            onChange={(e) => {
+                              setCustomCategoryName(e.target.value)
+                              if (whatIfValidationMsg) setWhatIfValidationMsg(null)
+                            }}
+                            placeholder="e.g. Electronics, Gifts..."
+                            className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--text)] font-mono focus:outline-none focus:border-[var(--accent)] transition-colors"
+                          />
+                        </div>
+                      )}
+
+                      {whatIfValidationMsg && (
+                        <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2 font-mono">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{whatIfValidationMsg}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleRunSimulation}
+                          disabled={whatIfLoading}
+                          className="flex-1 bg-[var(--accent)] text-black font-semibold text-xs py-2 rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                        >
+                          {whatIfLoading ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3.5 h-3.5" />
+                          )}
+                          <span>Simulate</span>
+                        </button>
+
+                        {whatIfResult && (
+                          <button
+                            type="button"
+                            onClick={handleResetSimulation}
+                            className="px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--panel)] transition-colors text-xs font-mono font-medium"
+                            title="Reset simulation"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+
+                      {whatIfResult && (
+                        <div className="mt-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--bg)]/70 space-y-3.5">
+                          <div className="flex items-center justify-between border-b border-[var(--border)]/60 pb-2">
                             <div>
-                              <h4 className="text-xs font-bold text-[var(--text)]">{ins.title}</h4>
-                              <p className="text-[11px] text-[var(--text-muted)] font-light mt-0.5 leading-relaxed">
-                                {ins.message}
-                              </p>
+                              <span className="text-xs font-bold text-[var(--text)] block">Simulation: Before vs After</span>
+                              <span className="text-[11px] font-mono text-[var(--text-muted)]">
+                                In-memory impact of ₹{whatIfResult.purchaseAmount.toLocaleString('en-IN')} on {whatIfResult.categoryName}
+                              </span>
+                            </div>
+                            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                              whatIfResult.healthScoreDelta < 0
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            }`}>
+                              Health {whatIfResult.healthScoreDelta >= 0 ? '+' : ''}{whatIfResult.healthScoreDelta} pts
+                            </span>
+                          </div>
+
+                          {/* Comparison Grid */}
+                          <div className="space-y-2 text-xs font-mono">
+                            {/* 1. Safe to Spend */}
+                            <div className="p-2.5 rounded-lg bg-[var(--panel)] border border-[var(--border)]">
+                              <div className="flex justify-between text-[11px] text-[var(--text-muted)] mb-1 font-medium">
+                                <span>SAFE TO SPEND</span>
+                                <span className={whatIfResult.safeToSpendDelta < 0 ? 'text-red-400 font-semibold' : 'text-emerald-400 font-semibold'}>
+                                  Change: {whatIfResult.safeToSpendDelta < 0 ? '-' : '+'}₹{Math.abs(whatIfResult.safeToSpendDelta).toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <div>
+                                  <span className="text-[var(--text-muted)]">Current: </span>
+                                  <span className="font-medium text-[var(--text)]">₹{whatIfResult.currentSafeToSpend.toLocaleString('en-IN')}</span>
+                                </div>
+                                <ArrowRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                                <div>
+                                  <span className="text-[var(--text-muted)]">After: </span>
+                                  <span className="font-bold text-emerald-400">₹{whatIfResult.simulatedSafeToSpend.toLocaleString('en-IN')}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 2. Daily Safe Spend */}
+                            <div className="p-2.5 rounded-lg bg-[var(--panel)] border border-[var(--border)]">
+                              <div className="flex justify-between text-[11px] text-[var(--text-muted)] mb-1 font-medium">
+                                <span>DAILY SAFE SPEND</span>
+                                <span className={whatIfResult.dailySafeSpendDelta < 0 ? 'text-red-400 font-semibold' : 'text-emerald-400 font-semibold'}>
+                                  Change: {whatIfResult.dailySafeSpendDelta < 0 ? '-' : '+'}₹{Math.abs(whatIfResult.dailySafeSpendDelta).toLocaleString('en-IN')}/d
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <div>
+                                  <span className="text-[var(--text-muted)]">Current: </span>
+                                  <span className="font-medium text-[var(--text)]">₹{whatIfResult.currentDailySafeSpend.toLocaleString('en-IN')}/d</span>
+                                </div>
+                                <ArrowRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                                <div>
+                                  <span className="text-[var(--text-muted)]">After: </span>
+                                  <span className="font-bold text-emerald-400">₹{whatIfResult.simulatedDailySafeSpend.toLocaleString('en-IN')}/d</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 3. Spending Health */}
+                            <div className="p-2.5 rounded-lg bg-[var(--panel)] border border-[var(--border)]">
+                              <div className="flex justify-between text-[11px] text-[var(--text-muted)] mb-1 font-medium">
+                                <span>SPENDING HEALTH</span>
+                                <span className={whatIfResult.healthScoreDelta < 0 ? 'text-amber-400 font-semibold' : 'text-emerald-400 font-semibold'}>
+                                  Change: {whatIfResult.healthScoreDelta >= 0 ? '+' : ''}{whatIfResult.healthScoreDelta}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <div>
+                                  <span className="text-[var(--text-muted)]">Current: </span>
+                                  <span className="font-medium text-[var(--text)]">{whatIfResult.currentHealthScore}/100</span>
+                                </div>
+                                <ArrowRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                                <div>
+                                  <span className="text-[var(--text-muted)]">After: </span>
+                                  <span className="font-bold text-[var(--accent)]">{whatIfResult.simulatedHealthScore}/100</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 4. Spending Pace */}
+                            <div className="p-2.5 rounded-lg bg-[var(--panel)] border border-[var(--border)]">
+                              <div className="text-[11px] text-[var(--text-muted)] mb-1 font-medium">SPENDING PACE</div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <div>
+                                  <span className="text-[var(--text-muted)]">Current: </span>
+                                  <span className="font-medium text-[var(--text)]">{whatIfResult.currentPaceStatus}</span>
+                                </div>
+                                <ArrowRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                                <div>
+                                  <span className="text-[var(--text-muted)]">After: </span>
+                                  <span className={`font-bold ${whatIfResult.simulatedPaceStatus === 'ABOVE PACE' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                    {whatIfResult.simulatedPaceStatus}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 5. Category Spending Impact */}
+                            <div className="p-2.5 rounded-lg bg-[var(--panel)] border border-[var(--border)]">
+                              <div className="flex justify-between text-[11px] text-[var(--text-muted)] mb-1 font-medium">
+                                <span>{whatIfResult.categoryName.toUpperCase()} SPEND</span>
+                                <span className={`font-semibold ${whatIfResult.categoryExceeded ? 'text-red-400' : 'text-emerald-400'}`}>
+                                  {whatIfResult.categoryExceeded ? 'EXCEEDS BASELINE' : 'WITHIN BASELINE'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <div>
+                                  <span className="text-[var(--text-muted)]">Current: </span>
+                                  <span className="font-medium text-[var(--text)]">₹{whatIfResult.categoryCurrentSpent.toLocaleString('en-IN')}</span>
+                                </div>
+                                <ArrowRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                                <div>
+                                  <span className="text-[var(--text-muted)]">After: </span>
+                                  <span className={`font-bold ${whatIfResult.categoryExceeded ? 'text-red-400' : 'text-[var(--text)]'}`}>
+                                    ₹{whatIfResult.categorySimulatedSpent.toLocaleString('en-IN')}
+                                  </span>
+                                  <span className="text-[11px] text-[var(--text-muted)] font-normal ml-1">/ ₹{whatIfResult.categoryBaseline.toLocaleString('en-IN')}</span>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        ))
-                      ) : (
-                        <div className="p-4 rounded-xl border border-[var(--accent-border)] bg-[var(--accent-bg)] flex items-start gap-3">
-                          <CheckCircle2 className="w-4 h-4 text-[var(--accent)] shrink-0 mt-0.5" />
-                          <div>
-                            <h4 className="text-xs font-bold text-[var(--text)]">Financial Pacing Healthy</h4>
-                            <p className="text-[11px] text-[var(--text-muted)] font-light mt-0.5">
-                              Your spending is aligned with your monthly income and savings projections.
-                            </p>
-                          </div>
+
+                          <p className="text-xs text-[var(--text-muted)] leading-relaxed border-t border-[var(--border)]/60 pt-2">
+                            {whatIfResult.impactNarrative}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -1268,21 +1727,21 @@ export default function DashboardPage() {
                   {/* Savings Goals Card */}
                   <section className="p-6 rounded-xl border border-[var(--border)] bg-[var(--panel)] space-y-4">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-base font-bold tracking-tight">Monthly savings goal</h3>
-                      <span className="text-xs font-mono text-[var(--text-muted)]">{savingsProgressPct}%</span>
+                      <h3 className="text-base font-bold tracking-tight text-[var(--text)]">Monthly savings goal</h3>
+                      <span className="text-xs font-mono text-[var(--text-muted)] font-medium">{savingsProgressPct}%</span>
                     </div>
 
                     <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg)] space-y-2">
                       <div className="flex justify-between items-center text-xs">
                         <span className="font-semibold text-[var(--text)]">Target Reserve</span>
-                        <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                        <span className="font-mono text-[11px] text-[var(--text-muted)]">
                           ₹{Math.max(0, remainingBalance).toLocaleString('en-IN')} / ₹{savingsGoal.toLocaleString('en-IN')}
                         </span>
                       </div>
                       <div className="h-1.5 w-full bg-[var(--panel)] rounded-full overflow-hidden border border-[var(--border)]">
                         <div className="h-full bg-[var(--accent)] transition-all" style={{ width: `${savingsProgressPct}%` }} />
                       </div>
-                      <span className="text-[10px] font-mono text-[var(--text-muted)] block pt-1">
+                      <span className="text-[11px] font-mono text-[var(--text-muted)] block pt-1 font-medium">
                         {remainingBalance >= savingsGoal
                           ? '✓ Goal achieved for this billing cycle'
                           : `₹${(savingsGoal - Math.max(0, remainingBalance)).toLocaleString('en-IN')} remaining to reach target`}
@@ -1372,14 +1831,14 @@ export default function DashboardPage() {
                                 <span>{tx.merchant}</span>
                               </td>
                               <td className="py-3.5 px-5">
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono border ${badgeStyle}`}>
+                                <span className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-medium border ${badgeStyle}`}>
                                   {tx.category}
                                 </span>
                               </td>
                               <td className="py-3.5 px-5 text-[var(--text-muted)] font-mono">
                                 {tx.timestamp.slice(0, 10)}
                               </td>
-                              <td className="py-3.5 px-5 text-[var(--text-muted)] font-light max-w-xs truncate">
+                              <td className="py-3.5 px-5 text-[var(--text-muted)] max-w-xs truncate">
                                 {tx.notes || '—'}
                               </td>
                               <td className="py-3.5 px-5 text-right font-mono font-semibold text-[var(--danger)]">

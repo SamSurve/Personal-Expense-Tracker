@@ -62,10 +62,15 @@ export default function SetupPage() {
   const handleFinish = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    let userId = 1
+    let userId: string | number = 1
     if (typeof window !== 'undefined') {
+      const storedUid = localStorage.getItem('firebase_uid')
       const storedId = localStorage.getItem('user_id')
-      if (storedId) userId = parseInt(storedId, 10) || 1
+      if (storedUid) {
+        userId = storedUid
+      } else if (storedId) {
+        userId = storedId
+      }
 
       localStorage.setItem('user_setup_completed', 'true')
       localStorage.setItem('user_setup_income', monthlyIncome)
