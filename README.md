@@ -158,7 +158,7 @@ flowchart LR
 
 <div align="center">
 
-**Built by [Yuvraj Singh](https://github.com/YuvrajsinghAIML)**
+**Built by [SamSurve](https://github.com/SamSurve) & [Yuvraj Singh](https://github.com/YuvrajsinghAIML)**
 
 ⭐ If this project helped you, drop a star!
 
